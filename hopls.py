@@ -8,6 +8,7 @@ from numpy.linalg import svd, pinv
 
 
 def cov(A, B):
+    "Computes the mode 1 (mode 0 in python) contraction of 2 matrices."
     assert A.shape[0] == B.shape[0], "A and B need to have the same shape on axis 0"
     dimension_A = A.shape[1:]
     dimension_B = B.shape[1:]
@@ -30,30 +31,30 @@ def hopls(X, Y, R, Ln, Kn, epsilon=10e-7):
     """Compute the HOPLS for X and Y wrt the parameters R, Ln and Kn.
 
     Parameters:
-        X: tensorly Tensor, The data tensor, needs to be of order 3 or more.
+        X: tensorly Tensor, The target tensor of shape [i1, ... iN], N >= 3.
 
-        Y: tensorly Tensor, The target tensor, needs to be of order 3 or more.
+        Y: tensorly Tensor, The target tensor of shape [j1, ... jM], M >= 3.
 
         R: int, The number of latent vectors.
 
-        Ln: list, the ranks for the decomposition of X.
+        Ln: list, the ranks for the decomposition of X: [L2, ..., LN].
 
-        Kn: list, the ranks for the decomposition of Y.
+        Kn: list, the ranks for the decomposition of Y: [K2, ..., KM].
 
-        epsilon: Float, default: 10e-5, The implicit secondary criterion of the
+        epsilon: Float, default: 10e-7, The implicit secondary criterion of the
             algorithm. The algorithm will stop if we have not reached R but the
             residuals have a norm smaller than epsilon.
 
     Returns:
-        G: The core Tensor of the HOPLS for X.
+        G: Tensor, The core Tensor of the HOPLS for X, of shape (R, L2, ..., LN).
 
-        P: The loadings of X.
+        P: List, The N-1 loadings of X. of shape (R, I(n+1), L(n+1)) for n from 1 to N-1.
 
-        D: The core Tensor of Y.
+        D: Tensor, The core Tensor of the HOPLS for Y, of shape (R, K2, ..., KN).
 
-        Q: The loadings of Y.
+        Q: List, The N-1 loadings of Y.
 
-        ts: The latent vectors of the HOPLS.
+        ts: Tensor, The latent vectors of the HOPLS, of shape (i1, R).
     """
 
     # check parameters
@@ -67,41 +68,54 @@ def hopls(X, Y, R, Ln, Kn, epsilon=10e-7):
         len(Kn) == Y_mode - 1
     ), f"The ranks for the decomposition of Y (Ln) need to be of len {Y_mode-1}."
     # Initialization
-    E, F = X, Y
-    Pr, Qr, Gr, Dr = [], [], [], []
-    ts = list()
+    Er, Fr = X, Y
+    P, Q, G, D, T = [], [], [], [], []
+    # Beginning of the algorithm
     for i in range(R):
-        if tl.norm(E) > epsilon and tl.norm(F) > epsilon:
-            C = cov(E, F)
-            _, latents = tucker(C, ranks=Ln + Kn)
-            P = latents[: X_mode - 1]
-            Q = latents[X_mode - 1 :]
-            t = svd(E)[0]
-            while len(t.shape) > 1:
-                t = t[:, 0]
-            t = t[..., np.newaxis]
-            Gr.append(tl.tucker_to_tensor(E, [t.T] + [p.T for p in P]))
-            Dr.append(tl.tucker_to_tensor(F, [t.T] + [q.T for q in Q]))
-            E = E - tl.tucker_to_tensor(Gr[i], [t] + P)
-            F = F - tl.tucker_to_tensor(Dr[i], [t] + Q)
-            Pr.append(P)
-            Qr.append(Q)
-            ts.append(t)
+        if tl.norm(Er) > epsilon and tl.norm(Fr) > epsilon:
+            Cr = cov(Er, Fr)
+            # HOOI ticker decomposition of C
+            _, latents = tucker(Cr, ranks=Ln + Kn)
+            # Getting P and Q
+            Pr = latents[: X_mode - 1]
+            Qr = latents[X_mode - 1 :]
+            # Getting t as the first leading left singular vector of E
+            tr = svd(Er)[0]
+            while len(tr.shape) > 1:
+                tr = tr[:, 0]
+            tr = tr[..., np.newaxis]
+            # recomposition of the core tensors
+            G.append(tl.tucker_to_tensor(E, [tr.T] + [pn.T for pn in Pr]))
+            D.append(tl.tucker_to_tensor(F, [tr.T] + [qn.T for qn in Qr]))
+            # Deflation
+            Er = Er - tl.tucker_to_tensor(G[i], [tr] + Pr)
+            Fr = Fr - tl.tucker_to_tensor(D[i], [tr] + Qr)
+            # Gathering of
+            P.append(Pr)
+            Q.append(Qr)
+            T.append(tr)
         else:
             R = i
             break
+    # reshaping the loadings
+    P = tl.tensor(P)
+    Q = tl.tensor(Q)
+    P = [P[:, i] for i in range(P.shape[1])]
+    Q = [Q[:, i] for i in range(Q.shape[1])]
     return (
-        tl.tensor(Gr).squeeze(),
-        tl.tensor(Pr),
-        tl.tensor(Dr).squeeze(),
-        tl.tensor(Qr),
-        tl.tensor(ts).squeeze(),
+        tl.tensor(G).squeeze(),
+        P,
+        tl.tensor(D).squeeze(),
+        Q,
+        tl.tensor(T).squeeze(),
         R,
     )
 
 
 if __name__ == "__main__":
+    # arbitrarly chosen epsilon
     epsilon = 1e-5
+    # Generation according to 4.1.1 of the paper equation (29)
     T = tl.tensor(np.random.normal(size=(20, 5)))
     P = tl.tensor(np.random.normal(size=(5, 10, 10)))
     Q = tl.tensor(np.random.normal(size=(5, 10, 10)))
@@ -111,25 +125,34 @@ if __name__ == "__main__":
     Y = mode_dot(Q, T, 0) + epsilon * F
     old_mse = np.inf
 
+    # Just like in the paper, we simplify by having l for all ranks
     for R, l in product(range(2, 10), range(2, 10)):
         g, p, d, q, ts, R = hopls(X, Y, R, [l, l], [l, l])
-        gp, wr, qr = [], [], []
         Y_pred = tl.tensor(np.zeros(Y.shape))
+
+        # we split R in two cases because if R = 1 the tensors being squeezed, there is no first
+        # dimension
         if R > 1:
+            # Recomposition of Y using equation (12) in section 3.1
+            # Recomposing using (26), (27) in section 3.4 didn't work because of different shapes
+            # and lack of information.
             for k in range(R):
                 comp = mode_dot(d[k][np.newaxis, ...], ts[k][..., np.newaxis], 0)
-                for j in range(q.shape[1]):
-                    comp = mode_dot(comp, q[k, j], j + 1)
+                for j, qq in enumerate(q):
+                    comp = mode_dot(comp, qq[k], j + 1)
                 Y_pred += comp
+
+        # case R = 1
         else:
             g = g[np.newaxis, ...]
             d = d[np.newaxis, ...]
             ts = ts[..., np.newaxis]
             comp = mode_dot(d, ts, 0)
-            for j in range(q.shape[1]):
-                comp = mode_dot(comp, q[:, j].squeeze(), j + 1)
+            for j, qq in enumerate(q):
+                comp = mode_dot(comp, qq.squeeze(), j + 1)
             Y_pred += comp
-            # gp.append(pinv(g))
+
+        # Evaluating performances using RMSEP
         mse = np.mean((np.square(Y - Y_pred)).mean(axis=0))
         if mse < old_mse:
             old_mse = mse
