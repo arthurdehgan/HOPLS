@@ -5,10 +5,16 @@ from tensorly.tenalg.n_mode_product import mode_dot
 from tensorly.tenalg import kronecker
 import numpy as np
 from numpy.linalg import svd, pinv
+import matplotlib.pyplot as plt
+
+
+def rmse(y_true, y_pred):
+    """Compute Root Mean Square Percentage Error between two arrays."""
+    return np.sqrt(np.mean(np.square(((y_true - y_pred) / y_pred)), axis=0))
 
 
 def cov(A, B):
-    "Computes the mode 1 (mode 0 in python) contraction of 2 matrices."
+    """Computes the mode 1 (mode 0 in python) contraction of 2 matrices."""
     assert A.shape[0] == B.shape[0], "A and B need to have the same shape on axis 0"
     dimension_A = A.shape[1:]
     dimension_B = B.shape[1:]
@@ -114,19 +120,19 @@ def hopls(X, Y, R, Ln, Kn, epsilon=10e-7):
 
 if __name__ == "__main__":
     # arbitrarly chosen epsilon
-    epsilon = 1e-5
+    epsilon = 5e-4
     # Generation according to 4.1.1 of the paper equation (29)
     T = tl.tensor(np.random.normal(size=(20, 5)))
     P = tl.tensor(np.random.normal(size=(5, 10, 10)))
     Q = tl.tensor(np.random.normal(size=(5, 10, 10)))
     E = tl.tensor(np.random.normal(size=(20, 10, 10)))
     F = tl.tensor(np.random.normal(size=(20, 10, 10)))
-    X = mode_dot(P, T, 0) + epsilon * E
-    Y = mode_dot(Q, T, 0) + epsilon * F
+    X = mode_dot(P, T, 0)  # + epsilon * E
+    Y = mode_dot(Q, T, 0)  # + epsilon * F
     old_mse = np.inf
 
     # Just like in the paper, we simplify by having l for all ranks
-    for R, l in product(range(2, 10), range(2, 10)):
+    for R, l in product(range(2, 7), range(2, 10)):
         g, p, d, q, ts, R = hopls(X, Y, R, [l, l], [l, l])
         Y_pred = tl.tensor(np.zeros(Y.shape))
 
@@ -153,11 +159,14 @@ if __name__ == "__main__":
             Y_pred += comp
 
         # Evaluating performances using RMSEP
-        mse = np.mean((np.square(Y - Y_pred)).mean(axis=0))
-        if mse < old_mse:
-            old_mse = mse
-            best_params = [R, l, mse]
-    print("Best model is with R={} and l={}, mse={:.2f}".format(*best_params))
+        rmsep = np.mean(rmse(Y, Y_pred))
+        if rmsep < old_mse:
+            old_mse = rmsep
+            best_params = [R, l, rmsep]
+    print("Best model is with R={} and l={}, rmsep={:.2f}".format(*best_params))
+    plt.plot(np.mean(np.mean(Y, axis=1), axis=0))
+    plt.plot(np.mean(np.mean(Y_pred, axis=1), axis=0))
+    plt.show()
 
     # wr.append(np.matmul(kronecker(p[k, i] for i in range(p.shape[1])), gp))
     # qr.append(np.matmul(d[k], kronecker([q[k, i] for i in range(q.shape[1])]).T))
