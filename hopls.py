@@ -34,90 +34,132 @@ def cov(A, B):
     return C
 
 
-def hopls(X, Y, R, Ln, Kn, epsilon=0):
-    """Compute the HOPLS for X and Y wrt the parameters R, Ln and Kn.
+class HOPLS:
+    def __init__(self, R, Ln, Kn, epsilon=1e-15):
+        """
+        Parameters:
+            R: int, The number of latent vectors.
 
-    Parameters:
-        X: tensorly Tensor, The target tensor of shape [i1, ... iN], N >= 3.
+            Ln: list, the ranks for the decomposition of X: [L2, ..., LN].
 
-        Y: tensorly Tensor, The target tensor of shape [j1, ... jM], M >= 3.
+            Kn: list, the ranks for the decomposition of Y: [K2, ..., KM].
 
-        R: int, The number of latent vectors.
+            epsilon: Float, default: 10e-7, The implicit secondary criterion of the
+                algorithm. The algorithm will stop if we have not reached R but the
+                residuals have a norm smaller than epsilon.
+        """
+        self.R = R
+        self.Kn = Kn
+        self.Ln = Ln
+        self.epsilon = epsilon
 
-        Ln: list, the ranks for the decomposition of X: [L2, ..., LN].
+    def fit(self, X, Y):
+        """
+        Compute the HOPLS for X and Y wrt the parameters R, Ln and Kn.
 
-        Kn: list, the ranks for the decomposition of Y: [K2, ..., KM].
+        Parameters:
+            X: tensorly Tensor, The target tensor of shape [i1, ... iN], N >= 3.
 
-        epsilon: Float, default: 10e-7, The implicit secondary criterion of the
-            algorithm. The algorithm will stop if we have not reached R but the
-            residuals have a norm smaller than epsilon.
+            Y: tensorly Tensor, The target tensor of shape [j1, ... jM], M >= 3.
 
-    Returns:
-        G: Tensor, The core Tensor of the HOPLS for X, of shape (R, L2, ..., LN).
+        Returns:
+            G: Tensor, The core Tensor of the HOPLS for X, of shape (R, L2, ..., LN).
 
-        P: List, The N-1 loadings of X. of shape (R, I(n+1), L(n+1)) for n from 1 to N-1.
+            P: List, The N-1 loadings of X. of shape (R, I(n+1), L(n+1)) for n from 1 to N-1.
 
-        D: Tensor, The core Tensor of the HOPLS for Y, of shape (R, K2, ..., KN).
+            D: Tensor, The core Tensor of the HOPLS for Y, of shape (R, K2, ..., KN).
 
-        Q: List, The N-1 loadings of Y.
+            Q: List, The N-1 loadings of Y.
 
-        ts: Tensor, The latent vectors of the HOPLS, of shape (i1, R).
-    """
+            ts: Tensor, The latent vectors of the HOPLS, of shape (i1, R).
+        """
+        # check parameters
+        X_mode = len(X.shape)
+        Y_mode = len(Y.shape)
+        assert Y_mode >= 3 and X_mode >= 3, "X and Y need to be mode 3 minimum."
+        assert (
+            len(self.Ln) == X_mode - 1
+        ), f"The list of ranks for the decomposition of X (Ln) need to be equal to the mode of X {X_mode-1}."
+        assert (
+            len(self.Kn) == Y_mode - 1
+        ), f"The list of ranks for the decomposition of Y (Ln) need to be equal to the mode of Y {Y_mode-1}."
+        # Initialization
+        Er, Fr = X, Y
+        P, Q, G, D, T = [], [], [], [], []
+        # Beginning of the algorithm
+        for i in range(self.R):
+            if tl.norm(Er) > epsilon and tl.norm(Fr) > epsilon:
+                Cr = cov(Er, Fr)
+                # HOOI ticker decomposition of C
+                _, latents = tucker(Cr, ranks=self.Ln + self.Kn)
+                # Getting P and Q
+                Pr = latents[: X_mode - 1]
+                Qr = latents[X_mode - 1 :]
+                # Getting t as the first leading left singular vector of E
+                tr = svd(Er)[0]
+                # tr /= tl.norm(tr)
+                while len(tr.shape) > 1:
+                    tr = tr[:, 0]
+                tr = tr[..., np.newaxis]
+                # recomposition of the core tensors
+                G.append(tl.tucker_to_tensor(E, [tr.T] + [pn.T for pn in Pr]))
+                D.append(tl.tucker_to_tensor(F, [tr.T] + [qn.T for qn in Qr]))
+                # Deflation
+                Er = Er - tl.tucker_to_tensor(G[i], [tr] + Pr)
+                Fr = Fr - tl.tucker_to_tensor(D[i], [tr] + Qr)
+                # Gathering of
+                P.append(Pr)
+                Q.append(Qr)
+                T.append(tr)
+            else:
+                break
+        # reshaping the loadings
+        P = tl.tensor(P)
+        Q = tl.tensor(Q)
+        # P = [P[:, i] for i in range(P.shape[1])]
+        # Q = [Q[:, i] for i in range(Q.shape[1])]
+        self.model = (
+            tl.tensor(G).squeeze(),
+            P,
+            tl.tensor(D).squeeze(),
+            Q,
+            tl.tensor(T).squeeze(),
+        )
+        return self.model
 
-    # check parameters
-    X_mode = len(X.shape)
-    Y_mode = len(Y.shape)
-    assert Y_mode >= 3 and X_mode >= 3, "X and Y need to be mode 3 minimum."
-    assert (
-        len(Ln) == X_mode - 1
-    ), f"The ranks for the decomposition of X (Ln) need to be of len {X_mode-1}."
-    assert (
-        len(Kn) == Y_mode - 1
-    ), f"The ranks for the decomposition of Y (Ln) need to be of len {Y_mode-1}."
-    # Initialization
-    Er, Fr = X, Y
-    P, Q, G, D, T = [], [], [], [], []
-    # Beginning of the algorithm
-    for i in range(R):
-        if tl.norm(Er) > epsilon and tl.norm(Fr) > epsilon:
-            Cr = cov(Er, Fr)
-            # HOOI ticker decomposition of C
-            _, latents = tucker(Cr, ranks=Ln + Kn)
-            # Getting P and Q
-            Pr = latents[: X_mode - 1]
-            Qr = latents[X_mode - 1 :]
-            # Getting t as the first leading left singular vector of E
-            tr = svd(Er)[0]
-            # tr /= tl.norm(tr)
-            while len(tr.shape) > 1:
-                tr = tr[:, 0]
-            tr = tr[..., np.newaxis]
-            # recomposition of the core tensors
-            G.append(tl.tucker_to_tensor(E, [tr.T] + [pn.T for pn in Pr]))
-            D.append(tl.tucker_to_tensor(F, [tr.T] + [qn.T for qn in Qr]))
-            # Deflation
-            Er = Er - tl.tucker_to_tensor(G[i], [tr] + Pr)
-            Fr = Fr - tl.tucker_to_tensor(D[i], [tr] + Qr)
-            # Gathering of
-            P.append(Pr)
-            Q.append(Qr)
-            T.append(tr)
-        else:
-            R = i
-            break
-    # reshaping the loadings
-    P = tl.tensor(P)
-    Q = tl.tensor(Q)
-    # P = [P[:, i] for i in range(P.shape[1])]
-    # Q = [Q[:, i] for i in range(Q.shape[1])]
-    return (
-        tl.tensor(G).squeeze(),
-        P,
-        tl.tensor(D).squeeze(),
-        Q,
-        tl.tensor(T).squeeze(),
-        R,
-    )
+    def predict(self, X):
+        """Compute the HOPLS for X and Y wrt the parameters R, Ln and Kn.
+
+        Parameters:
+            X: tensorly Tensor, The target tensor of shape [i1, ... iN], N >= 3.
+
+        Returns:
+            Y_pred: tensorly Tensor, The predicted Y from the model.
+        """
+        g, p, d, q, ts = self.model
+        N = p.shape[1]
+        gp = [pinv(g[k]) for k in range(self.R)]
+        wr = [
+            np.matmul(kronecker([p[k, N - i - 1] for i in range(N)]), gp[k].flatten())
+            for k in range(self.R)
+        ]
+        qr = [
+            np.matmul(d[k].flatten(), kronecker([q[k, N - i - 1] for i in range(N)]).T)
+            for k in range(self.R)
+        ]
+        W_star = np.asarray(wr).T
+        Q_star = np.asarray(qr).T
+        Y_pred = np.matmul(X.reshape(20, 100), np.matmul(W_star, Q_star.T)).reshape(
+            Y.shape
+        )
+        return Y_pred
+
+    def score(self, X, Y, metric=None):
+        self.fit(X, Y)
+        Y_pred = self.predict(X)
+        if metric is None:
+            metric = rmse
+        return metric(Y, Y_pred)
 
 
 if __name__ == "__main__":
@@ -135,30 +177,11 @@ if __name__ == "__main__":
 
     # Just like in the paper, we simplify by having l for all ranks
     for R, l in product(range(3, 7), range(3, 10)):
-        g, p, d, q, ts, R = hopls(X, Y, R, [l, l], [l, l])
-        N = p.shape[1]
-        gp = [pinv(g[k]) for k in range(R)]
-        wr = [
-            np.matmul(kronecker([p[k, N - i - 1] for i in range(N)]), gp[k].flatten())
-            for k in range(R)
-        ]
-        qr = [
-            np.matmul(d[k].flatten(), kronecker([q[k, N - i - 1] for i in range(N)]).T)
-            for k in range(R)
-        ]
-        W_star = np.asarray(wr).T
-        Q_star = np.asarray(qr).T
-        Y_pred = np.matmul(X.reshape(20, 100), np.matmul(W_star, Q_star.T)).reshape(
-            Y.shape
-        )
+        hopls = HOPLS(R, [l, l], [l, l])
+        rmsep = np.mean(hopls.score(X, Y))
 
-        # Evaluating performances using RMSEP
-        rmsep = np.mean(rmse(Y, Y_pred))
         if rmsep < old_mse:
             old_mse = rmsep
             best_params = [R, l, rmsep]
 
     print("Best model is with R={} and l={}, rmsep={:.2f}".format(*best_params))
-    plt.plot(np.mean(np.mean(Y, axis=1), axis=0))
-    plt.plot(np.mean(np.mean(Y_pred, axis=1), axis=0))
-    plt.show()
