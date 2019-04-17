@@ -6,6 +6,7 @@ from tensorly.tenalg import kronecker
 import numpy as np
 from numpy.linalg import svd, pinv
 import matplotlib.pyplot as plt
+from sklearn.cross_decomposition import PLSRegression
 
 
 def rmse(y_true, y_pred):
@@ -33,7 +34,7 @@ def cov(A, B):
     return C
 
 
-def hopls(X, Y, R, Ln, Kn, epsilon=10e-7):
+def hopls(X, Y, R, Ln, Kn, epsilon=0):
     """Compute the HOPLS for X and Y wrt the parameters R, Ln and Kn.
 
     Parameters:
@@ -87,6 +88,7 @@ def hopls(X, Y, R, Ln, Kn, epsilon=10e-7):
             Qr = latents[X_mode - 1 :]
             # Getting t as the first leading left singular vector of E
             tr = svd(Er)[0]
+            # tr /= tl.norm(tr)
             while len(tr.shape) > 1:
                 tr = tr[:, 0]
             tr = tr[..., np.newaxis]
@@ -106,8 +108,8 @@ def hopls(X, Y, R, Ln, Kn, epsilon=10e-7):
     # reshaping the loadings
     P = tl.tensor(P)
     Q = tl.tensor(Q)
-    P = [P[:, i] for i in range(P.shape[1])]
-    Q = [Q[:, i] for i in range(Q.shape[1])]
+    # P = [P[:, i] for i in range(P.shape[1])]
+    # Q = [Q[:, i] for i in range(Q.shape[1])]
     return (
         tl.tensor(G).squeeze(),
         P,
@@ -132,44 +134,31 @@ if __name__ == "__main__":
     old_mse = np.inf
 
     # Just like in the paper, we simplify by having l for all ranks
-    for R, l in product(range(2, 7), range(2, 10)):
+    for R, l in product(range(3, 7), range(3, 10)):
         g, p, d, q, ts, R = hopls(X, Y, R, [l, l], [l, l])
-        Y_pred = tl.tensor(np.zeros(Y.shape))
-
-        # we split R in two cases because if R = 1 the tensors being squeezed, there is no first
-        # dimension
-        if R > 1:
-            # Recomposition of Y using equation (12) in section 3.1
-            # Recomposing using (26), (27) in section 3.4 didn't work because of different shapes
-            # and lack of information.
-            for k in range(R):
-                comp = mode_dot(d[k][np.newaxis, ...], ts[k][..., np.newaxis], 0)
-                for j, qq in enumerate(q):
-                    comp = mode_dot(comp, qq[k], j + 1)
-                Y_pred += comp
-
-        # case R = 1
-        else:
-            g = g[np.newaxis, ...]
-            d = d[np.newaxis, ...]
-            ts = ts[..., np.newaxis]
-            comp = mode_dot(d, ts, 0)
-            for j, qq in enumerate(q):
-                comp = mode_dot(comp, qq.squeeze(), j + 1)
-            Y_pred += comp
+        N = p.shape[1]
+        gp = [pinv(g[k]) for k in range(R)]
+        wr = [
+            np.matmul(kronecker([p[k, N - i - 1] for i in range(N)]), gp[k].flatten())
+            for k in range(R)
+        ]
+        qr = [
+            np.matmul(d[k].flatten(), kronecker([q[k, N - i - 1] for i in range(N)]).T)
+            for k in range(R)
+        ]
+        W_star = np.asarray(wr).T
+        Q_star = np.asarray(qr).T
+        Y_pred = np.matmul(X.reshape(20, 100), np.matmul(W_star, Q_star.T)).reshape(
+            Y.shape
+        )
 
         # Evaluating performances using RMSEP
         rmsep = np.mean(rmse(Y, Y_pred))
         if rmsep < old_mse:
             old_mse = rmsep
             best_params = [R, l, rmsep]
+
     print("Best model is with R={} and l={}, rmsep={:.2f}".format(*best_params))
     plt.plot(np.mean(np.mean(Y, axis=1), axis=0))
     plt.plot(np.mean(np.mean(Y_pred, axis=1), axis=0))
     plt.show()
-
-    # wr.append(np.matmul(kronecker(p[k, i] for i in range(p.shape[1])), gp))
-    # qr.append(np.matmul(d[k], kronecker([q[k, i] for i in range(q.shape[1])]).T))
-    # W = np.asarray(wr)
-    # Q_star = np.asarray(qr)
-    # Y_pred = np.matmul(Q_star.T, ts)
