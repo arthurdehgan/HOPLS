@@ -85,7 +85,7 @@ class HOPLS:
                 tr = Er
                 for k in range(len(Er.shape) - 1):
                     tr = mode_dot(tr, Pr[k].T, k + 1)
-                tr = np.matmul(tr.reshape(tr.shape[0], -1), pinv(Gr_C.reshape(1, -1)))
+                tr = np.matmul(tl.unfold(tr, 0), pinv(Gr_C.reshape(1, -1)))
                 tr /= tl.norm(tr)
                 # recomposition of the core tensors
                 G.append(tl.tucker_to_tensor(Er, [tr.T] + [pn.T for pn in Pr]))
@@ -165,7 +165,7 @@ class HOPLS:
                 for k in range(len(Er.shape) - 1):
                     tr = mode_dot(tr, Pr[k].T, k + 1)
                 # Getting t as the first leading left singular vector of the product
-                tr = svd(tr.reshape(Er.shape[0], -1))[0][:, 0]
+                tr = svd(tl.unfold(tr, 0))[0][:, 0]
                 tr = tr[..., np.newaxis]
                 # recomposition of the core tensors
                 G.append(tl.tucker_to_tensor(Er, [tr.T] + [pn.T for pn in Pr]))
@@ -218,7 +218,7 @@ class HOPLS:
         ]
         W_star = np.asarray(wr).T
         Q_star = np.asarray(qr).T
-        X = X.reshape(X.shape[0], -1)
+        X = tl.unfold(X, 0)
         X = np.matmul(X, W_star)
         if len(Y.shape) > 2:
             return np.matmul(X, Q_star.T).reshape(Y.shape)
