@@ -35,12 +35,13 @@ def cov(A, B):
     #         [A[tuple([i] + idx_A)] * B[tuple([i] + idx_B)] for i in range(dim)]
     #     )
     # return C
-    alpha = "bcdefghijklmnopqrstuvwxyz"
-    A_alpha = alpha[: len(A.shape) - 1]
-    B_alpha = alpha[1 - len(B.shape) :]
-    string = "a" + A_alpha + "," + B_alpha + "->" + A_alpha + B_alpha
-    print(A.shape, B.shape)
-    return np.einsum("a...,a...->...", A, B)
+    # alpha = "bcdefghijklmnopqrstuvwxyz"
+    # A_alpha = alpha[: len(A.shape) - 1]
+    # B_alpha = alpha[1 - len(B.shape) :]
+    # string = "a" + A_alpha + "," + B_alpha + "->" + A_alpha + B_alpha
+    # print(A.shape, B.shape)
+    # return np.einsum("a...,a...->...", A, B)
+    return
 
 
 class HOPLS:
@@ -97,8 +98,8 @@ class HOPLS:
         # Beginning of the algorithm
         for r in range(self.R):
             if tl.norm(Er) > self.epsilon and tl.norm(Fr) > self.epsilon:
-                Cr = np.einsum("abcd,ax->bcdx", Er, Fr)
-                # HOOI ticker decomposition of C
+                Cr = np.tensordot(Er, Fr, (0, 0))
+                # HOOI tucker decomposition of C
                 # print(len(self.Ln), len(Er.shape))
                 Gr_C, latents = tucker(
                     Cr, ranks=[1] + self.Ln, n_iter_max=int(1e6), tol=1e-7
@@ -164,12 +165,16 @@ class HOPLS:
         ), f"The list of ranks for the decomposition of Y (Kn) need to be equal to the mode of Y -1: {Y_mode-1}."
         # Initialization
         Er, Fr = X, Y
-        P, Q, G, D, T = [], [], [], [], []
+        In = X.shape
+        P, Q = [], []
+        G = tl.zeros((self.R, *self.Ln))
+        D = tl.zeros((self.R, *self.Kn))
+        T = tl.zeros((In[0], self.R))
         # Beginning of the algorithm
-        for i in range(self.R):
+        for r in range(self.R):
             if tl.norm(Er) > self.epsilon and tl.norm(Fr) > self.epsilon:
                 Cr = np.tensordot(Er, Fr, (0, 0))
-                # HOOI ticker decomposition of C
+                # HOOI tucker decomposition of C
                 _, latents = tucker(
                     Cr, ranks=self.Ln + self.Kn, n_iter_max=int(1e6), tol=1e-7
                 )
@@ -184,29 +189,20 @@ class HOPLS:
                 tr = svd(tl.unfold(tr, 0))[0][:, 0]
                 tr = tr[..., np.newaxis]
                 # recomposition of the core tensors
-                G.append(tl.tucker_to_tensor(Er, [tr.T] + [pn.T for pn in Pr]))
-                D.append(tl.tucker_to_tensor(Fr, [tr.T] + [qn.T for qn in Qr]))
+                Gr = tl.tucker_to_tensor(Er, [tr.T] + [pn.T for pn in Pr])
+                Dr = tl.tucker_to_tensor(Fr, [tr.T] + [qn.T for qn in Qr])
                 # Deflation
-                Er = Er - tl.tucker_to_tensor(G[i], [tr] + Pr)
-                Fr = Fr - tl.tucker_to_tensor(D[i], [tr] + Qr)
+                Er = Er - tl.tucker_to_tensor(Gr, [tr] + Pr)
+                Fr = Fr - tl.tucker_to_tensor(Dr, [tr] + Qr)
                 # Gathering of
                 P.append(Pr)
                 Q.append(Qr)
-                T.append(tr)
+                G[r] = Gr[0]
+                D[r] = Dr[0]
+                T[:, r] = tr[:, 0]
             else:
                 break
-        # reshaping the loadings
-        P = tl.tensor(P)
-        Q = tl.tensor(Q)
-        # P = [P[:, i] for i in range(P.shape[1])]
-        # Q = [Q[:, i] for i in range(Q.shape[1])]
-        self.model = (
-            tl.tensor(G).squeeze(),
-            P,
-            tl.tensor(D).squeeze(),
-            Q,
-            tl.tensor(T).squeeze(),
-        )
+        self.model = (P, Q, G, D, T)
         return self.model
 
     def predict(self, X, Y):
@@ -224,7 +220,10 @@ class HOPLS:
         P, Q, G, D, _ = self.model
         N = len(self.Ln)
         G_pi = tl.zeros(G.shape)
-        Q_star = tl.zeros(Q.shape)
+        if len(Y.shape) == 2:
+            Q_star = tl.zeros(Q.shape)
+        else:
+            Q_star = []
         W = tl.zeros((*X.shape[1:], self.R)).reshape(-1, self.R)
         for r in range(self.R):
             G_pi[r] = pinv(G[r])
@@ -232,12 +231,17 @@ class HOPLS:
                 kronecker([P[r][N - n - 1] for n in range(N)]), G_pi[r].reshape(-1)
             )
             if len(Y.shape) > 2:
-                Q_star[:, r] = np.matmul(
-                    tl.unfold(D[r], 0), kronecker([Q[r, N - n - 1] for n in range(N)]).T
+                Q_star.append(
+                    np.matmul(
+                        tl.unfold(D[r], 0),
+                        kronecker([Q[r][N - n - 1] for n in range(N)]).T,
+                    )
                 )
             else:
                 Q_star[:, r] = D[r, r] * Q[:, r]
 
+        if len(Y.shape) > 2:
+            Q_star = tl.tensor(Q_star).T
         print(tl.unfold(X, 0).shape, W.shape, Q_star.shape)
         return np.matmul(np.matmul(tl.unfold(X, 0), W), Q_star.T)
 

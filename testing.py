@@ -10,7 +10,9 @@ def hyper_params_search(data, target, metric=None, verbose=True):
     old_error = -np.inf
     # Just like in the paper, we simplify by having l for all ranks
     for R, l in product(range(3, 7), range(3, 10)):
-        hopls = HOPLS(R, [l, l, l], [l, l], metric=None)
+        hopls = HOPLS(
+            R, [l] * (len(data.shape) - 1), [l] * (len(data.shape) - 1), metric=None
+        )
         error = np.mean(hopls.score(data, target))
         if error > old_error:
             old_error = error
@@ -23,8 +25,8 @@ def hyper_params_search(data, target, metric=None, verbose=True):
 if __name__ == "__main__":
     # Generation according to 4.1.1 of the paper equation (29)
     T = tl.tensor(np.random.normal(size=(20, 5)))
-    P = tl.tensor(np.random.normal(size=(5, 10, 13, 23)))
-    Q = tl.tensor(np.random.normal(size=(5, 15)))
+    P = tl.tensor(np.random.normal(size=(5, 10, 10)))
+    Q = tl.tensor(np.random.normal(size=(5, 10, 10)))
     E = tl.tensor(np.random.normal(size=(20, 10, 10)))
     F = tl.tensor(np.random.normal(size=(20, 10, 10)))
     X = mode_dot(P, T, 0)
