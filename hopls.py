@@ -113,7 +113,8 @@ class HOPLS:
                 # Getting P and Q
                 qr = latents[0]
                 Pr = latents[1:]
-                tr = multi_mode_dot(Er, Pr, list(range(1, len(Pr))))
+                tr = Er
+                tr = multi_mode_dot(Er, Pr, list(range(1, len(Pr))), transpose=True)
                 tr = np.matmul(tl.unfold(tr, 0), pinv(Gr_C.reshape(1, -1)))
                 tr /= tl.norm(tr)
                 # recomposition of the core tensors
