@@ -14,7 +14,10 @@ def rmsep(y_true, y_pred):
 
 def qsquared(y_true, y_pred):
     """Compute the Q^2 Error between two arrays."""
-    return 1 - ((tl.norm(y_true - y_pred) ** 2) / (tl.norm(y_true) ** 2))
+    return 1 - (
+        (np.linalg.norm(y_true - y_pred, "fro") ** 2)
+        / (np.linalg.norm(y_true, "fro") ** 2)
+    )
 
 
 def cov(A, B):
@@ -97,7 +100,10 @@ class HOPLS:
         T = tl.zeros((In[0], self.R))
         # Beginning of the algorithm
         for r in range(self.R):
-            if tl.norm(Er) > self.epsilon and tl.norm(Fr) > self.epsilon:
+            if (
+                np.linalg.norm(Er, "fro") > self.epsilon
+                and np.linalg.norm(Fr, "fro") > self.epsilon
+            ):
                 Cr = np.tensordot(Er, Fr, (0, 0))
                 # HOOI tucker decomposition of C
                 # print(len(self.Ln), len(Er.shape))
@@ -111,7 +117,7 @@ class HOPLS:
                 for k in range(len(Er.shape) - 1):
                     tr = mode_dot(tr, Pr[k].T, k + 1)
                 tr = np.matmul(tl.unfold(tr, 0), pinv(Gr_C.reshape(1, -1)))
-                tr /= tl.norm(tr)
+                tr /= np.linalg.norm(tr, "fro")
                 # recomposition of the core tensors
                 Gr = tl.tucker_to_tensor(Er, [tr.T] + [pn.T for pn in Pr])
                 ur = np.matmul(Fr, qr)
@@ -172,7 +178,10 @@ class HOPLS:
         T = tl.zeros((In[0], self.R))
         # Beginning of the algorithm
         for r in range(self.R):
-            if tl.norm(Er) > self.epsilon and tl.norm(Fr) > self.epsilon:
+            if (
+                np.linalg.norm(Er, "fro") > self.epsilon
+                and np.linalg.norm(Fr, "fro") > self.epsilon
+            ):
                 Cr = np.tensordot(Er, Fr, (0, 0))
                 # HOOI tucker decomposition of C
                 _, latents = tucker(
@@ -233,7 +242,7 @@ class HOPLS:
             if len(Y.shape) > 2:
                 Q_star.append(
                     np.matmul(
-                        tl.unfold(D[r], 0),
+                        D[r].reshape(-1),
                         kronecker([Q[r][N - n - 1] for n in range(N)]).T,
                     )
                 )
@@ -248,4 +257,4 @@ class HOPLS:
     def score(self, X, Y):
         self.fit(X, Y)
         Y_pred = self.predict(X, Y)
-        return self.metric(Y, Y_pred)
+        return self.metric(Y.reshape(Y.shape[0], -1), Y_pred)
