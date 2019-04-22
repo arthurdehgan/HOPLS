@@ -219,7 +219,7 @@ class HOPLS:
         Returns:
             Y_pred: tensorly Tensor, The predicted Y from the model.
         """
-        P, Q, G, D, _ = self.model
+        P, Q, G, D, T = self.model
         N = len(self.Ln)
         M = len(self.Kn)
         G_pi = []
@@ -246,6 +246,7 @@ class HOPLS:
         if len(Y.shape) > 2:
             Q_star = tl.tensor(Q_star).T
         return np.matmul(np.matmul(tl.unfold(X, 0), W), Q_star.T).reshape(Y.shape)
+        # return np.matmul(T, Q_star.T).reshape(Y.shape)
 
     def score(self, X, Y):
         self.fit(X, Y)
