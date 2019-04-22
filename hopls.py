@@ -39,13 +39,6 @@ def cov(A, B):
             [A[tuple([i] + idx_A)] * B[tuple([i] + idx_B)] for i in range(dim)]
         )
     return C
-    # alpha = "bcdefghijklmnopqrstuvwxyz"
-    # A_alpha = alpha[: len(A.shape) - 1]
-    # B_alpha = alpha[1 - len(B.shape) :]
-    # string = "a" + A_alpha + "," + B_alpha + "->" + A_alpha + B_alpha
-    # print(A.shape, B.shape)
-    # return np.einsum("a...,a...->...", A, B)
-    # return
 
 
 class HOPLS:
@@ -84,7 +77,7 @@ class HOPLS:
         Returns:
             G: Tensor, The core Tensor of the HOPLS for X, of shape (R, L2, ..., LN).
 
-            P: List, The N-1 loadings of X. of shape (R, I(n+1), L(n+1)) for n from 1 to N-1.
+            P: List, The N-1 loadings of X.
 
             D: Tensor, The core Tensor of the HOPLS for Y, of shape (R, K2, ..., KN).
 
@@ -92,6 +85,7 @@ class HOPLS:
 
             ts: Tensor, The latent vectors of the HOPLS, of shape (i1, R).
         """
+
         # Initialization
         In = X.shape
         M = Y.shape[-1]
@@ -101,35 +95,40 @@ class HOPLS:
         G = tl.zeros((self.R, *self.Ln))
         D = tl.zeros((self.R, self.R))
         T = tl.zeros((In[0], self.R))
+
         # Beginning of the algorithm
         for r in range(self.R):
             if tl.norm(Er) > self.epsilon and tl.norm(Fr) > self.epsilon:
+                # computing the covariance
                 Cr = cov(Er, Fr)
+
                 # HOOI tucker decomposition of C
-                # print(len(self.Ln), len(Er.shape))
                 Gr_C, latents = tucker(
                     Cr, ranks=[1] + self.Ln, n_iter_max=int(1e6), tol=1e-7
                 )
-                # Getting P and Q
+
+                # Getting P and Q loadings
                 qr = latents[0]
                 Pr = latents[1:]
-                tr = Er
                 tr = multi_mode_dot(Er, Pr, list(range(1, len(Pr))), transpose=True)
                 tr = np.matmul(tl.unfold(tr, 0), pinv(Gr_C.reshape(1, -1)))
                 tr /= tl.norm(tr)
+
                 # recomposition of the core tensors
                 Gr = tl.tucker_to_tensor(Er, [tr] + Pr, transpose_factors=True)
                 ur = np.matmul(Fr, qr)
                 dr = np.matmul(ur.T, tr)
-                # Deflation
-                Er = Er - tl.tucker_to_tensor(Gr, [tr] + Pr)
-                Fr = Fr - dr * np.matmul(tr, qr.T)
+
                 # Gathering of R variables
                 P.append(Pr)
                 Q[:, r] = qr.T
                 G[r] = Gr[0]
                 D[r, r] = dr
                 T[:, r] = tr[:, 0]
+
+                # Deflation
+                Er = Er - tl.tucker_to_tensor(Gr, [tr] + Pr)
+                Fr = Fr - dr * np.matmul(tr, qr.T)
             else:
                 break
         self.model = (P, Q, G, D, T)
@@ -147,7 +146,7 @@ class HOPLS:
         Returns:
             G: Tensor, The core Tensor of the HOPLS for X, of shape (R, L2, ..., LN).
 
-            P: List, The N-1 loadings of X. of shape (R, I(n+1), L(n+1)) for n from 1 to N-1.
+            P: List, The N-1 loadings of X.
 
             D: Tensor, The core Tensor of the HOPLS for Y, of shape (R, K2, ..., KN).
 
@@ -168,6 +167,7 @@ class HOPLS:
         assert (
             len(self.Kn) == Y_mode - 1
         ), f"The list of ranks for the decomposition of Y (Kn) need to be equal to the mode of Y -1: {Y_mode-1}."
+
         # Initialization
         Er, Fr = X, Y
         In = X.shape
@@ -175,6 +175,7 @@ class HOPLS:
         G = tl.zeros((self.R, *self.Ln))
         D = tl.zeros((self.R, *self.Kn))
         T = tl.zeros((In[0], self.R))
+
         # Beginning of the algorithm
         for r in range(self.R):
             if tl.norm(Er) > self.epsilon and tl.norm(Fr) > self.epsilon:
@@ -183,25 +184,31 @@ class HOPLS:
                 _, latents = tucker(
                     Cr, ranks=self.Ln + self.Kn, n_iter_max=int(1e6), tol=1e-7
                 )
-                # Getting P and Q
+
+                # Getting P and Q loadings
                 Pr = latents[: len(Er.shape) - 1]
                 Qr = latents[len(Er.shape) - 1 :]
+
                 # computing product of Er by latents of X
                 tr = multi_mode_dot(Er, Pr, list(range(1, len(Pr))), transpose=True)
+
                 # Getting t as the first leading left singular vector of the product
                 tr = svd(tl.unfold(tr, 0))[0][:, 0]
                 tr = tr[..., np.newaxis]
+
                 # recomposition of the core tensors
                 Gr = tl.tucker_to_tensor(Er, [tr] + Pr, transpose_factors=True)
                 Dr = tl.tucker_to_tensor(Fr, [tr] + Qr, transpose_factors=True)
-                # Deflation
-                Er = Er - tl.tucker_to_tensor(Gr, [tr] + Pr)
-                Fr = Fr - tl.tucker_to_tensor(Dr, [tr] + Qr)
+
                 # Gathering of
                 P.append(Pr)
                 Q.append(Qr)
                 G[r] = Gr[0]
                 D[r] = Dr[0]
+
+                # Deflation
+                Er = Er - tl.tucker_to_tensor(Gr, [tr] + Pr)
+                Fr = Fr - tl.tucker_to_tensor(Dr, [tr] + Qr)
                 T[:, r] = tr[:, 0]
             else:
                 break

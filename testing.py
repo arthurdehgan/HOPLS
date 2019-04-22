@@ -6,70 +6,55 @@ from sklearn.cross_decomposition import PLSRegression
 from sklearn.metrics import r2_score, mean_squared_error as mse
 from joblib import Parallel, delayed
 from hopls import HOPLS, qsquared, rmsep
-
-
-def hyperparameters_search(data, target, metric=None, verbose=True):
-    old_error = -np.inf
-    # old_error = np.inf
-    # Just like in the paper, we simplify by having l for all ranks
-    for R, l in product(range(3, 7), range(3, 20)):
-        hopls = HOPLS(
-            R, [l] * (len(data.shape) - 1), [l] * (len(target.shape) - 1), metric=metric
-        )
-        error = np.mean(hopls.score(data, target))
-        if error > old_error:
-            # if error < old_error:
-            old_error = error
-            best_params = [R, l, error]
-    if verbose:
-        print("Best model is with R={} and l={}, error={:.2f}".format(*best_params))
-    return best_params
-
-
-def generate_and_test(metric=qsquared):
-    T = tl.tensor(np.random.normal(size=(20, 5)))
-    P = tl.tensor(np.random.normal(size=(5, 10, 11)))
-    Q = tl.tensor(np.random.normal(size=(5, 12, 13)))
-    X = mode_dot(P, T, 0)
-    Y = mode_dot(Q, T, 0)
-    l = 4
-    Ln = [l] * (len(X.shape) - 1)
-    Kn = None
-    if len(Y.shape) > 2:
-        Kn = [l] * (len(Y.shape) - 1)
-    model = HOPLS(5, Ln, Kn)
-    model.fit(X, Y)
-    Y_pred = model.predict(X, Y)
-    return metric(Y, Y_pred)
+from scipy.stats import zscore
 
 
 if __name__ == "__main__":
     # Generation according to 4.1.1 of the paper equation (29)
     T = tl.tensor(np.random.normal(size=(10, 5)))
-    P = tl.tensor(np.random.normal(size=(5, 11, 12, 13)))
-    Q = tl.tensor(np.random.normal(size=(5, 6, 7)))
+    P = tl.tensor(np.random.normal(size=(5, 10, 10)))
+    Q = tl.tensor(np.random.normal(size=(5, 10, 10)))
     # Q = tl.tensor(np.random.normal(size=(5, 12)))
-    E = tl.tensor(np.random.normal(size=(10, 10, 11)))
+    E = tl.tensor(np.random.normal(size=(10, 10, 10)))
     F = tl.tensor(np.random.normal(size=(10, 10, 10)))
     X = mode_dot(P, T, 0)
     Y = mode_dot(Q, T, 0)
 
     # hyperparameters_search(X, Y, verbose=True)
 
-    test = PLSRegression(n_components=5)
-    PLS_X = X.reshape(X.shape[0], -1)  # + 100 * E.reshape(X.shape[0], -1)
-    PLS_Y = Y.reshape(X.shape[0], -1)
-    test.fit(PLS_X, PLS_Y)
-    Y_pred = test.predict(PLS_X)
-    print(qsquared(PLS_Y, Y_pred))
-    print(np.mean(rmsep(PLS_Y, Y_pred)))
-    print(r2_score(PLS_Y, Y_pred))
-    print(mse(PLS_Y, Y_pred))
+    # see TABLE 1 for R and lambda values of PLS and HOPLS
+    R_list = [5, 5, 3, 3]
+    R_ho_list = [9, 7, 5, 3]
+    lambda_list = [6, 5, 4, 5]
+    for i, snr in enumerate([10, 5, 0, -5]):
+        epsilon = 1 / (10 ** (snr / 10))
+        noisy_X = X + epsilon * E
+        noisy_Y = Y + epsilon * E
 
-    for l in range(3, 6):
-        hop = HOPLS(R=5, Ln=[l, l + 1, l + 2], Kn=[l, l + 1])
-        hop.fit(X, Y)
-        print(hop.score(X, Y))
+        print("\n PLS" + str(snr))
+        test = PLSRegression(n_components=R_list[i])
+        PLS_X = tl.unfold(noisy_X, 0)
+        PLS_Y = tl.unfold(noisy_Y, 0)
+        test.fit(PLS_X, PLS_Y)
+        Y_pred = test.predict(PLS_X)
+        Y_pred = zscore(Y_pred)
+        PLS_Y = zscore(PLS_Y)
+        print(qsquared(PLS_Y, Y_pred))
+        print(r2_score(PLS_Y, Y_pred))
+        print(np.mean(rmsep(PLS_Y, Y_pred)))
+        print(mse(PLS_Y, Y_pred))
+
+        print("\n HOPLS" + str(snr))
+        l = lambda_list[i]
+        hop = HOPLS(R=R_ho_list[i], Ln=[l, l], Kn=[l, l])
+        hopls = hop.fit(noisy_X, noisy_Y)
+        Y_pred_hopls = hop.predict(noisy_X, noisy_Y)
+        Y_pred_hopls = tl.unfold(zscore(Y_pred_hopls), 0)
+        noisy_Y = tl.unfold(zscore(noisy_Y), 0)
+        print(qsquared(noisy_Y, Y_pred_hopls))
+        print(r2_score(noisy_Y, Y_pred_hopls))
+        print(np.mean(rmsep(noisy_Y, Y_pred_hopls)))
+        print(mse(noisy_Y, Y_pred_hopls))
 
     # Q_err = Parallel(n_jobs=-1)(delayed(generate_and_test)() for _ in range(100))
     # print(np.mean(Q_err))
