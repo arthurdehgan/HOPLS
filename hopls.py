@@ -205,11 +205,11 @@ class HOPLS:
                 Q.append(Qr)
                 G[r] = Gr[0]
                 D[r] = Dr[0]
+                T[:, r] = tr[:, 0]
 
                 # Deflation
                 Er = Er - tl.tucker_to_tensor(Gr, [tr] + Pr)
                 Fr = Fr - tl.tucker_to_tensor(Dr, [tr] + Qr)
-                T[:, r] = tr[:, 0]
             else:
                 break
         self.model = (P, Q, G, D, T)
