@@ -3,6 +3,7 @@ import numpy as np
 import tensorly as tl
 from tensorly.tenalg.n_mode_product import mode_dot
 from sklearn.cross_decomposition import PLSRegression
+from joblib import Parallel, delayed
 from hopls import HOPLS, qsquared
 
 
@@ -26,21 +27,22 @@ if __name__ == "__main__":
     # Generation according to 4.1.1 of the paper equation (29)
     T = tl.tensor(np.random.normal(size=(20, 5)))
     P = tl.tensor(np.random.normal(size=(5, 10, 10)))
-    Q = tl.tensor(np.random.normal(size=(5, 10, 10)))
+    Q = tl.tensor(np.random.normal(size=(5, 10)))
     E = tl.tensor(np.random.normal(size=(20, 10, 10)))
     F = tl.tensor(np.random.normal(size=(20, 10, 10)))
     X = mode_dot(P, T, 0)
     Y = mode_dot(Q, T, 0)
 
-    hyper_params_search(X, Y, verbose=True)
+    # hyper_params_search(X, Y, verbose=True)
 
     # test = PLSRegression(n_components=5)
     # test.fit(X, Y)
     # print(qsquared(Y, test.predict(X)))
 
-    # for _ in range(100):
-    #     _, _, err = hyper_params_search(X, X, verbose=False)
-    # print(err / 100)
+    # err = Parallel(n_jobs=-1)(
+    #     delayed(hyper_params_search)(X, Y, verbose=False) for _ in range(100)
+    # )
+    # print(np.mean(err))
 
     # for snr in [10, 5, 0, -5, -10]:
     #     print(f"SNR={snr}")

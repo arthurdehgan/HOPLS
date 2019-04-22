@@ -98,7 +98,7 @@ class HOPLS:
         # Beginning of the algorithm
         for r in range(self.R):
             if tl.norm(Er) > self.epsilon and tl.norm(Fr) > self.epsilon:
-                Cr = np.tensordot(Er, Fr, (0, 0))
+                Cr = mode_dot(Er, Fr.T, 0)
                 # HOOI tucker decomposition of C
                 # print(len(self.Ln), len(Er.shape))
                 Gr_C, latents = tucker(
@@ -203,7 +203,7 @@ class HOPLS:
             else:
                 break
         self.model = (P, Q, G, D, T)
-        return self.model
+        return self
 
     def predict(self, X, Y):
         """Compute the HOPLS for X and Y wrt the parameters R, Ln and Kn.
@@ -242,8 +242,7 @@ class HOPLS:
 
         if len(Y.shape) > 2:
             Q_star = tl.tensor(Q_star).T
-        print(tl.unfold(X, 0).shape, W.shape, Q_star.shape)
-        return np.matmul(np.matmul(tl.unfold(X, 0), W), Q_star.T)
+        return np.matmul(np.matmul(tl.unfold(X, 0), W), Q_star.T).reshape(Y.shape)
 
     def score(self, X, Y):
         self.fit(X, Y)
