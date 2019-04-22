@@ -1,13 +1,17 @@
 from itertools import product
 import tensorly as tl
 from tensorly.decomposition import tucker
-from tensorly.tenalg.n_mode_product import mode_dot
-from tensorly.tenalg import kronecker
+from tensorly.tenalg import mode_dot, multi_mode_dot, kronecker
 import numpy as np
 from numpy.linalg import svd, pinv
 
 
 def rmsep(y_true, y_pred):
+    """Compute Root Mean Square Error between two arrays."""
+    return np.sqrt(np.mean((y_true - y_pred) ** 2, axis=0))
+
+
+def rmse(y_true, y_pred):
     """Compute Root Mean Square Percentage Error between two arrays."""
     return np.sqrt(np.mean((y_true - y_pred) ** 2, axis=0))
 
@@ -18,30 +22,30 @@ def qsquared(y_true, y_pred):
 
 
 def cov(A, B):
-    # """Computes the mode 1 (mode 0 in python) contraction of 2 matrices."""
-    # assert A.shape[0] == B.shape[0], "A and B need to have the same shape on axis 0"
-    # dimension_A = A.shape[1:]
-    # dimension_B = B.shape[1:]
-    # dimensions = list(dimension_A) + list(dimension_B)
-    # rmode_A = len(dimension_A)
-    # dim = A.shape[0]
-    # C = np.zeros(dimensions)
-    # indices = []
-    # for mode in dimensions:
-    #     indices.append(range(mode))
-    # for idx in product(indices):
-    #     idx_A, idx_B = list(idx[:rmode_A]), list(idx[rmode_A:])
-    #     C[tuple(idx_A + idx_B)] = sum(
-    #         [A[tuple([i] + idx_A)] * B[tuple([i] + idx_B)] for i in range(dim)]
-    #     )
-    # return C
+    """Computes the mode 1 (mode 0 in python) contraction of 2 matrices."""
+    assert A.shape[0] == B.shape[0], "A and B need to have the same shape on axis 0"
+    dimension_A = A.shape[1:]
+    dimension_B = B.shape[1:]
+    dimensions = list(dimension_A) + list(dimension_B)
+    rmode_A = len(dimension_A)
+    dim = A.shape[0]
+    C = tl.zeros(dimensions)
+    indices = []
+    for mode in dimensions:
+        indices.append(range(mode))
+    for idx in product(*indices):
+        idx_A, idx_B = list(idx[:rmode_A]), list(idx[rmode_A:])
+        C[idx] = np.sum(
+            [A[tuple([i] + idx_A)] * B[tuple([i] + idx_B)] for i in range(dim)]
+        )
+    return C
     # alpha = "bcdefghijklmnopqrstuvwxyz"
     # A_alpha = alpha[: len(A.shape) - 1]
     # B_alpha = alpha[1 - len(B.shape) :]
     # string = "a" + A_alpha + "," + B_alpha + "->" + A_alpha + B_alpha
     # print(A.shape, B.shape)
     # return np.einsum("a...,a...->...", A, B)
-    return
+    # return
 
 
 class HOPLS:
@@ -64,6 +68,8 @@ class HOPLS:
         self.epsilon = epsilon
         if metric is None:
             self.metric = qsquared
+        else:
+            self.metric = metric
         self.model = None
 
     def _fit_2d(self, X, Y):
@@ -98,7 +104,7 @@ class HOPLS:
         # Beginning of the algorithm
         for r in range(self.R):
             if tl.norm(Er) > self.epsilon and tl.norm(Fr) > self.epsilon:
-                Cr = mode_dot(Er, Fr.T, 0)
+                Cr = cov(Er, Fr)
                 # HOOI tucker decomposition of C
                 # print(len(self.Ln), len(Er.shape))
                 Gr_C, latents = tucker(
@@ -107,13 +113,11 @@ class HOPLS:
                 # Getting P and Q
                 qr = latents[0]
                 Pr = latents[1:]
-                tr = Er
-                for k in range(len(Er.shape) - 1):
-                    tr = mode_dot(tr, Pr[k].T, k + 1)
+                tr = multi_mode_dot(Er, Pr, list(range(1, len(Pr))))
                 tr = np.matmul(tl.unfold(tr, 0), pinv(Gr_C.reshape(1, -1)))
                 tr /= tl.norm(tr)
                 # recomposition of the core tensors
-                Gr = tl.tucker_to_tensor(Er, [tr.T] + [pn.T for pn in Pr])
+                Gr = tl.tucker_to_tensor(Er, [tr] + Pr, transpose_factors=True)
                 ur = np.matmul(Fr, qr)
                 dr = np.matmul(ur.T, tr)
                 # Deflation
@@ -128,7 +132,7 @@ class HOPLS:
             else:
                 break
         self.model = (P, Q, G, D, T)
-        return self.model
+        return self
 
     def fit(self, X, Y):
         """
@@ -173,7 +177,7 @@ class HOPLS:
         # Beginning of the algorithm
         for r in range(self.R):
             if tl.norm(Er) > self.epsilon and tl.norm(Fr) > self.epsilon:
-                Cr = np.tensordot(Er, Fr, (0, 0))
+                Cr = cov(Er, Fr)
                 # HOOI tucker decomposition of C
                 _, latents = tucker(
                     Cr, ranks=self.Ln + self.Kn, n_iter_max=int(1e6), tol=1e-7
@@ -182,15 +186,13 @@ class HOPLS:
                 Pr = latents[: len(Er.shape) - 1]
                 Qr = latents[len(Er.shape) - 1 :]
                 # computing product of Er by latents of X
-                tr = Er
-                for k in range(len(Er.shape) - 1):
-                    tr = mode_dot(tr, Pr[k].T, k + 1)
+                tr = multi_mode_dot(Er, Pr, list(range(1, len(Pr))), transpose=True)
                 # Getting t as the first leading left singular vector of the product
                 tr = svd(tl.unfold(tr, 0))[0][:, 0]
                 tr = tr[..., np.newaxis]
                 # recomposition of the core tensors
-                Gr = tl.tucker_to_tensor(Er, [tr.T] + [pn.T for pn in Pr])
-                Dr = tl.tucker_to_tensor(Fr, [tr.T] + [qn.T for qn in Qr])
+                Gr = tl.tucker_to_tensor(Er, [tr] + Pr, transpose_factors=True)
+                Dr = tl.tucker_to_tensor(Fr, [tr] + Qr, transpose_factors=True)
                 # Deflation
                 Er = Er - tl.tucker_to_tensor(Gr, [tr] + Pr)
                 Fr = Fr - tl.tucker_to_tensor(Dr, [tr] + Qr)
@@ -219,22 +221,23 @@ class HOPLS:
         """
         P, Q, G, D, _ = self.model
         N = len(self.Ln)
-        G_pi = tl.zeros(G.shape)
+        M = len(self.Kn)
+        G_pi = []
         if len(Y.shape) == 2:
             Q_star = tl.zeros(Q.shape)
         else:
             Q_star = []
         W = tl.zeros((*X.shape[1:], self.R)).reshape(-1, self.R)
         for r in range(self.R):
-            G_pi[r] = pinv(G[r])
+            G_pi.append(pinv(G[r]))
             W[:, r] = np.matmul(
-                kronecker([P[r][N - n - 1] for n in range(N)]), G_pi[r].reshape(-1)
+                kronecker([P[r][N - n - 1] for n in range(N)]), G_pi[-1].reshape(-1)
             )
             if len(Y.shape) > 2:
                 Q_star.append(
                     np.matmul(
                         D[r].reshape(-1),
-                        kronecker([Q[r][N - n - 1] for n in range(N)]).T,
+                        kronecker([Q[r][M - n - 1] for n in range(M)]).T,
                     )
                 )
             else:
@@ -247,4 +250,4 @@ class HOPLS:
     def score(self, X, Y):
         self.fit(X, Y)
         Y_pred = self.predict(X, Y)
-        return self.metric(Y.reshape(Y.shape[0], -1), Y_pred)
+        return self.metric(Y.reshape(Y.shape[0], -1), Y_pred.reshape(Y.shape[0], -1))
