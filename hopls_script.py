@@ -10,6 +10,17 @@ from torch import norm, svd, pinverse as pinv
 tl.set_backend("pytorch")
 
 
+def cov(A, B):
+    C = torch.zeros(*(list(A.shape[1:]) + list(B.shape[1:])))
+    dim = len(A.shape[1:])
+    for idx in product(*[range(C.shape[i]) for i in range(len(C.shape))]):
+        for i1 in range(A.shape[0]):
+            X_index = tuple([i1] + list(idx[:dim]))
+            Y_index = tuple([i1] + list(idx[dim:]))
+            C[idx] += X[X_index] * B[Y_index]
+    return C
+
+
 def qsquared(y_true, y_pred):
     """Compute the Q^2 Error between two arrays."""
     return 1 - ((norm(y_true - y_pred) ** 2) / (norm(y_true) ** 2))
@@ -62,13 +73,7 @@ T = tl.zeros((In[0], R))
 # Beginning of the algorithm
 for r in range(R):
     # computing the covariance
-    Cr = torch.zeros(*(list(X.shape[1:]) + list(Y.shape[1:])))
-    dim = len(X.shape[1:])
-    for idx in product(*[range(Cr.shape[i]) for i in range(len(Cr.shape))]):
-        for i1 in range(X.shape[0]):
-            X_index = tuple([i1] + list(idx[:dim]))
-            Y_index = tuple([i1] + list(idx[dim:]))
-            Cr[idx] += X[X_index] * Y[Y_index]
+    Cr = mode_dot(Er, Fr.transpose(0, 1), 0)
 
     # HOOI tucker decomposition of C
     Gr_C, latents = tucker(Cr, ranks=[1] + Ln)
@@ -76,46 +81,45 @@ for r in range(R):
     # Getting P and Q loadings
     qr = latents[0]
     Pr = latents[1:]
-    tr = Er
-    for i, P in enumerate(Pr):
-        tr = mode_dot(Er, P, i + 1)
-    tr = multi_mode_dot(Er, Pr, list(range(1, len(Pr) + 1)))
+    tr = multi_mode_dot(Er, Pr, list(range(1, len(Pr) + 1)), transpose=True)
     tr = torch.mm(tl.unfold(tr, 0), pinv(Gr_C.reshape(1, -1)))
     tr /= norm(tr)
 
     # recomposition of the core tensors
     Gr = tl.tucker_to_tensor(Er, [tr] + Pr, transpose_factors=True)
     ur = torch.mm(Fr, qr)
-    dr = torch.mm(ur.T, tr)
+    dr = torch.mm(ur.transpose(0, 1), tr)
 
     # Gathering of R variables
     P.append(Pr)
-    Q[:, r] = qr.T
+    Q[:, r] = qr.transpose(0, 1)
     G[r] = Gr[0]
     D[r, r] = dr
     T[:, r] = tr[:, 0]
 
     # Deflation
     Er = Er - tl.tucker_to_tensor(Gr, [tr] + Pr)
-    Fr = Fr - dr * torch.mm(tr, qr.T)
+    Fr = Fr - dr * torch.mm(tr, qr.transpose(0, 1))
 
 model = (P, Q, G, D, T)
 P, Q, G, D, T = model
 N = len(Ln)
-G_pi = []
 
 Q_star = tl.zeros(Q.shape)
 W = tl.zeros((*X.shape[1:], R)).reshape(-1, R)
 
 for r in range(R):
-    G_pi.append(pinv(G[r]))
+    G_pi = pinv(tl.unfold(G[r], 0))
     W[:, r] = torch.mm(
-        kronecker([P[r][N - n - 1] for n in range(N)]), G_pi[-1].reshape(-1)
-    )
+        kronecker([P[r][N - n - 1] for n in range(N)]), G_pi.view(-1, 1)
+    ).view(-1)
     Q_star[:, r] = D[r, r] * Q[:, r]
 
-Y_pred = torch.mm(torch.mm(tl.unfold(X, 0), W), Q_star.T).reshape(Y.shape)
+Y_pred = torch.mm(torch.mm(tl.unfold(X, 0), W), Q_star.transpose(0, 1)).reshape(Y.shape)
 
 Q2 = qsquared(Y, Y_pred)
 print("HOPLS")
 print("Q2: " + str(Q2))
+"""
+PLot with modes on y and x and 3 curves of q2 scores for the 3 algorithms
+"""
