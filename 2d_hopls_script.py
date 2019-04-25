@@ -61,14 +61,17 @@ Y = og_Y
 
 Ln = [5] * (len(X.shape) - 1)
 
+R = 5
 In = X.shape
+N = len(Ln)
 M = Y.shape[-1]
 Er, Fr = X, Y
-P = []
+P = tl.zeros((R, 15000)).transpose(0, 1)
+W = tl.zeros((*X.shape[1:], R)).reshape(-1, R)
+Q_star = tl.zeros((M, R))
 Q = tl.zeros((M, R))
-G = tl.zeros((R, *Ln))
-D = tl.zeros((R, R))
-T = tl.zeros((In[0], R))
+D = torch.zeros((R, R))
+Gr, _ = tucker(Er, ranks=[1] + Ln)
 
 # Beginning of the algorithm
 for r in range(R):
@@ -76,46 +79,44 @@ for r in range(R):
     Cr = mode_dot(Er, Fr.transpose(0, 1), 0)
 
     # HOOI tucker decomposition of C
-    Gr_C, latents = tucker(Cr, ranks=[1] + Ln)
+    _, latents = tucker(Cr, ranks=[1] + Ln)
 
     # Getting P and Q loadings
     qr = latents[0]
     Pr = latents[1:]
     tr = multi_mode_dot(Er, Pr, list(range(1, len(Pr) + 1)), transpose=True)
-    tr = torch.mm(tl.unfold(tr, 0), pinv(Gr_C.reshape(1, -1)))
+    Gr_pi = pinv(tl.unfold(Gr, 0))
+    tr = torch.mm(tl.unfold(tr, 0), Gr_pi)
     tr /= norm(tr)
 
     # recomposition of the core tensors
-    Gr = tl.tucker_to_tensor(Er, [tr] + Pr, transpose_factors=True)
     ur = torch.mm(Fr, qr)
     dr = torch.mm(ur.transpose(0, 1), tr)
-
-    # Gathering of R variables
-    P.append(Pr)
-    Q[:, r] = qr.transpose(0, 1)
-    G[r] = Gr[0]
     D[r, r] = dr
-    T[:, r] = tr[:, 0]
 
+    Pkron = kronecker([Pr[N - n - 1] for n in range(N)])
+    W[:, r] = torch.mm(Pkron, Gr_pi).view(1, -1)
+    Q[:, r] = qr.transpose(0, 1)
+    Q_star[:, r] = dr * qr.transpose(0, 1)
+    Pr = torch.mm(tl.unfold(Gr, 0), Pkron.transpose(0, 1))
+    X_hat = torch.mm(tr, Pr)
+
+    P[:, r] = Pr
     # Deflation
-    Er = Er - tl.tucker_to_tensor(Gr, [tr] + Pr)
+    Er = Er - X_hat.view(Er.shape)
     Fr = Fr - dr * torch.mm(tr, qr.transpose(0, 1))
 
-model = (P, Q, G, D, T)
-P, Q, G, D, T = model
-N = len(Ln)
 
-Q_star = tl.zeros(Q.shape)
-W = tl.zeros((*X.shape[1:], R)).reshape(-1, R)
-
+Wfin = []
 for r in range(R):
-    G_pi = pinv(tl.unfold(G[r], 0))
-    W[:, r] = torch.mm(
-        kronecker([P[r][N - n - 1] for n in range(N)]), G_pi.view(-1, 1)
-    ).view(-1)
-    Q_star[:, r] = D[r, r] * Q[:, r]
+    inter = pinv(torch.mm(P[:, : r + 1].transpose(0, 1), W[:, : r + 1]))
+    W_star = torch.mm(W[:, : r + 1], inter)
+    Wfin.append(
+        torch.mm(W_star, torch.mm(D[: r + 1, : r + 1], Q[:, : r + 1].transpose(0, 1)))
+    )
+    print(Wfin[-1].shape)
 
-Y_pred = torch.mm(torch.mm(tl.unfold(X, 0), W), Q_star.transpose(0, 1)).reshape(Y.shape)
+Y_pred = torch.mm(tl.unfold(X, 0), W)
 
 Q2 = qsquared(Y, Y_pred)
 print("HOPLS")
