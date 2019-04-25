@@ -1,4 +1,5 @@
 from itertools import product
+import numpy as np
 import tensorly as tl
 from tensorly.decomposition import tucker
 from tensorly.tenalg import multi_mode_dot, kronecker, mode_dot
@@ -27,49 +28,62 @@ def qsquared(y_true, y_pred):
 
 
 snr = 10
-data = loadmat(f"hox_data_{snr}dB.mat")
-og_X = torch.Tensor(data["data"])
-og_Y = torch.Tensor(data["target"])
+T = tl.tensor(np.random.normal(size=(100, 5)))
+P = tl.tensor(np.random.normal(size=(5, 10, 10)))
+Q = tl.tensor(np.random.normal(size=(5, 5)))
+E = tl.tensor(np.random.normal(size=(100, 10, 10)))
+F = tl.tensor(np.random.normal(size=(100, 5)))
+X = mode_dot(P, T, 0)
+Y = mode_dot(Q, T, 0)
+epsilon = 1 / (10 ** (snr / 10))
+noisy_X = X + epsilon * E
+noisy_Y = Y + epsilon * F
+og_X = torch.Tensor(noisy_X)
+og_Y = torch.Tensor(noisy_Y)
 
-X = tl.unfold(og_X, 0)
-Y = tl.unfold(og_Y, 0)
-X_train = X[:60]
-Y_train = Y[:60]
-X_valid = X[60:80]
-Y_valid = Y[60:80]
-X_test = X[80:100]
-Y_test = Y[80:100]
+# X = tl.unfold(og_X, 0)
+# Y = tl.unfold(og_Y, 0)
+# X_train = X[:60]
+# Y_train = Y[:60]
+# X_valid = X[60:80]
+# Y_valid = Y[60:80]
+# X_test = X[80:100]
+# Y_test = Y[80:100]
 
-old_Q2 = -float("Inf")
-for R in range(1, 20):
-    test = PLSRegression(n_components=R)
-    test.fit(X_train, Y_train)
-    PLS_X_test = tl.unfold(X_valid, 0)
-    PLS_Y_test = tl.unfold(Y_valid, 0)
-    Y_pred = torch.Tensor(test.predict(X_valid))
-    Q2 = qsquared(Y_valid, Y_pred)
-    if Q2 > old_Q2:
-        best_params = {"R": R, "score": Q2, "pred": Y_pred}
-        old_Q2 = Q2
+# old_Q2 = -float("Inf")
+# for R in range(1, 20):
+#     test = PLSRegression(n_components=R)
+#     test.fit(X_train, Y_train)
+#     PLS_X_test = tl.unfold(X_valid, 0)
+#     PLS_Y_test = tl.unfold(Y_valid, 0)
+#     Y_pred = torch.Tensor(test.predict(X_valid))
+#     Q2 = qsquared(Y_valid, Y_pred)
+#     if Q2 > old_Q2:
+#         best_params = {"R": R, "score": Q2, "pred": Y_pred}
+#         old_Q2 = Q2
+#
+# print("PLS sanity check")
+# print("best param is R=" + str(best_params["R"]))
+# print("Q2: " + str(float(Q2)))
 
-print("PLS sanity check")
-print("best param is R=" + str(best_params["R"]))
-print("Q2: " + str(float(Q2)))
+X = og_X[:60]
+Y = og_Y[:60]
 
-X = og_X
-Y = og_Y
+for i in range(X.shape[0]):
+    X[i] -= torch.mean(X[i]) * torch.ones(X[i].shape)
+    Y[i] -= torch.mean(Y[i]) * torch.ones(Y[i].shape)
 
-Ln = [5] * (len(X.shape) - 1)
+Ln = [2] * (len(X.shape) - 1)
 
 R = 5
 In = X.shape
 N = len(Ln)
 M = Y.shape[-1]
 Er, Fr = X, Y
-P = tl.zeros((R, 15000)).transpose(0, 1)
+P = tl.zeros((*X.shape[1:], R)).reshape(-1, R)
 W = tl.zeros((*X.shape[1:], R)).reshape(-1, R)
-Q_star = tl.zeros((M, R))
 Q = tl.zeros((M, R))
+T = tl.zeros((X.shape[0], R))
 D = torch.zeros((R, R))
 Gr, _ = tucker(Er, ranks=[1] + Ln)
 
@@ -96,12 +110,13 @@ for r in range(R):
 
     Pkron = kronecker([Pr[N - n - 1] for n in range(N)])
     W[:, r] = torch.mm(Pkron, Gr_pi).view(1, -1)
-    Q[:, r] = qr.transpose(0, 1)
-    Q_star[:, r] = dr * qr.transpose(0, 1)
     Pr = torch.mm(tl.unfold(Gr, 0), Pkron.transpose(0, 1))
+    P[:, r] = Pr
+
+    Q[:, r] = qr.view(-1)
+    T[:, r] = tr.view(-1)
     X_hat = torch.mm(tr, Pr)
 
-    P[:, r] = Pr
     # Deflation
     Er = Er - X_hat.view(Er.shape)
     Fr = Fr - dr * torch.mm(tr, qr.transpose(0, 1))
@@ -114,9 +129,8 @@ for r in range(R):
     Wfin.append(
         torch.mm(W_star, torch.mm(D[: r + 1, : r + 1], Q[:, : r + 1].transpose(0, 1)))
     )
-    print(Wfin[-1].shape)
 
-Y_pred = torch.mm(tl.unfold(X, 0), W)
+Y_pred = torch.mm(tl.unfold(X, 0), Wfin[-1])
 
 Q2 = qsquared(Y, Y_pred)
 print("HOPLS")
