@@ -1,32 +1,35 @@
 import numpy as np
 import tensorly as tl
-from tensorly.tenalg.n_mode_product import mode_dot
+from tensorly.tenalg import mode_dot, multi_mode_dot
 from scipy.io import savemat
 
 
-if __name__ == "__main__":
-    # Generation according to 4.1.1 of the paper equation (29)
-    T = tl.tensor(np.random.normal(size=(100, 5)))
-    P = tl.tensor(np.random.normal(size=(5, 10, 10, 15, 10)))
-    Q = tl.tensor(np.random.normal(size=(5, 20)))
-    E = tl.tensor(np.random.normal(size=(100, 10, 10, 15, 10)))
-    F = tl.tensor(np.random.normal(size=(100, 20)))
-    X = mode_dot(P, T, 0)
-    Y = mode_dot(Q, T, 0)
+def generate(I1, In, Jn, X_mode, Y_mode=2, R=5, L=7, snr=10):
+    T = tl.tensor(np.random.normal(size=(R, I1)))
+    P = []
+    for _ in range(X_mode - 1):
+        P.append(tl.tensor(np.random.normal(size=(In, L)).T))
+    G = tl.tensor(np.random.normal(size=[R] + [L] * (X_mode - 1)))
+    # Q = []
+    # for i in range(Y_mode):
+    #     Q.append(tl.tensor(np.random.normal(size=(In, L))))
+    D = tl.tensor(np.random.normal(size=[R, Jn]))
+    E = tl.tensor(np.random.normal(size=[I1] + [In] * (X_mode - 1)))
+    F = tl.tensor(np.random.normal(size=[I1] + [Jn] * (Y_mode - 1)))
 
-    for i, snr in enumerate([10, 5, 0, -5, -10]):
-        epsilon = 1 / (10 ** (snr / 10))
-        noisy_X = X + epsilon * E
-        noisy_Y = Y + epsilon * F
-        savemat(
-            f"hox_data_{snr}dB",
-            {
-                "data": noisy_X,
-                "target": noisy_Y,
-                "latents": T,
-                "Q": Q,
-                "P": P,
-                "E": E,
-                "F": F,
-            },
-        )
+    data = multi_mode_dot(G, [T] + P, np.arange(X_mode), transpose=True)
+    target = np.matmul(T.T, D)
+
+    epsilon = 1 / (10 ** (snr / 10))
+    data = data + epsilon * E
+    target = target + epsilon * F
+
+    return data, target
+
+
+if __name__ == "__main__":
+    for order in [3, 5]:
+        for noise in [10, 5, 0, -5]:
+            X, Y = generate(100, 10, 10, order, snr=noise)
+
+            savemat(f"data_order{order}_{noise}dB", {"X": X, "Y": Y})

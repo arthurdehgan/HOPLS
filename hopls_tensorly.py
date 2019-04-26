@@ -1,66 +1,43 @@
-"""
-Implementation of HOPLS using torch and tntensor
-https://github.com/rballester/tntorch
-
-Author:
-    Arthur Dehgan
-"""
 from itertools import product
-import tntorch as tn
-import torch
-from torch import norm as frob_norm, mean, sqrt, svd, pinverse as pinv
+import tensorly as tl
+from tensorly.decomposition import tucker
+from tensorly.tenalg import mode_dot, multi_mode_dot, kronecker
+import numpy as np
+from numpy.linalg import svd, pinv
 
 
 def rmsep(y_true, y_pred):
     """Compute Root Mean Square Error between two arrays."""
-    return sqrt(mean((y_true - y_pred) ** 2, dim=0))
+    return np.sqrt(np.mean((y_true - y_pred) ** 2, axis=0))
 
 
 def rmse(y_true, y_pred):
     """Compute Root Mean Square Percentage Error between two arrays."""
-    return sqrt(mean((y_true - y_pred) ** 2, dim=0))
+    return np.sqrt(np.mean((y_true - y_pred) ** 2, axis=0))
 
 
 def qsquared(y_true, y_pred):
     """Compute the Q^2 Error between two arrays."""
-    return 1 - ((frob_norm(y_true - y_pred) ** 2) / (frob_norm(y_true) ** 2))
+    return 1 - ((tl.norm(y_true - y_pred) ** 2) / (tl.norm(y_true) ** 2))
 
 
-def prod(lis):
-    ret = 1
-    for i in lis:
-        ret *= i
-    return ret
-
-
-def mode_product(A, B, mode=0):
-    A = torch.tensor(A)
-    B = torch.tensor(B)
-    dimA = A.shape[:mode] + A.shape[mode + 1 :]
-    dimB = B.shape[:mode] + B.shape[mode + 1 :]
-    return torch.mm(
-        A.resize_(prod(dimA), A.shape[mode]), B.resize_(B.shape[mode], prod(dimB))
-    ).view(dimA, dimB)
-
-
-def tensor_dot(A, B, mode=0):
+def cov(A, B):
     """Computes the mode 1 (mode 0 in python) contraction of 2 matrices."""
     assert A.shape[0] == B.shape[0], "A and B need to have the same shape on axis 0"
-    dimA = A.shape[:mode] + A.shape[mode + 1 :]
-    dimB = B.shape[:mode] + B.shape[mode + 1 :]
-    dimensions = list(dimA) + list(dimB)
-    rmode_A = len(dimA)
-    dim = A.shape[mode]
-    C = torch.zeros(dimensions)
+    dimension_A = A.shape[1:]
+    dimension_B = B.shape[1:]
+    dimensions = list(dimension_A) + list(dimension_B)
+    rmode_A = len(dimension_A)
+    dim = A.shape[0]
+    C = tl.zeros(dimensions)
     indices = []
     for mode in dimensions:
         indices.append(range(mode))
     for idx in product(*indices):
         idx_A, idx_B = list(idx[:rmode_A]), list(idx[rmode_A:])
-        som = torch.Tensor(
+        C[idx] = np.sum(
             [A[tuple([i] + idx_A)] * B[tuple([i] + idx_B)] for i in range(dim)]
         )
-        C[idx] = torch.sum(som)
     return C
 
 
@@ -114,29 +91,28 @@ class HOPLS:
         M = Y.shape[-1]
         Er, Fr = X, Y
         P = []
-        Q = torch.zeros((M, self.R))
-        G = torch.zeros((self.R, *self.Ln))
-        D = torch.zeros((self.R, self.R))
-        T = torch.zeros((In[0], self.R))
+        Q = tl.zeros((M, self.R))
+        G = tl.zeros((self.R, *self.Ln))
+        D = tl.zeros((self.R, self.R))
+        T = tl.zeros((In[0], self.R))
 
         # Beginning of the algorithm
         for r in range(self.R):
-            if frob_norm(Er) > self.epsilon and frob_norm(Fr) > self.epsilon:
+            if tl.norm(Er) > self.epsilon and tl.norm(Fr) > self.epsilon:
                 # computing the covariance
                 Cr = cov(Er, Fr)
 
                 # HOOI tucker decomposition of C
-                decomp = tn.Tensor(Cr, ranks_tucker=[1] + self.Ln)
+                Gr_C, latents = tucker(
+                    Cr, ranks=[1] + self.Ln, n_iter_max=int(1e6), tol=1e-7
+                )
 
                 # Getting P and Q loadings
-                qr = decomp.Us[0]
-                Pr = decomp.Us[1:]
-                tr = Er
-                for i, p in enumerate(Pr):
-                    tr = tn.dot(tr, p, k=i + 2)
+                qr = latents[0]
+                Pr = latents[1:]
                 tr = multi_mode_dot(Er, Pr, list(range(1, len(Pr))), transpose=True)
                 tr = np.matmul(tl.unfold(tr, 0), pinv(Gr_C.reshape(1, -1)))
-                tr /= frob_norm(tr)
+                tr /= tl.norm(tr)
 
                 # recomposition of the core tensors
                 Gr = tl.tucker_to_tensor(Er, [tr] + Pr, transpose_factors=True)
@@ -196,13 +172,13 @@ class HOPLS:
         Er, Fr = X, Y
         In = X.shape
         P, Q = [], []
-        G = torch.zeros((self.R, *self.Ln))
-        D = torch.zeros((self.R, *self.Kn))
-        T = torch.zeros((In[0], self.R))
+        G = tl.zeros((self.R, *self.Ln))
+        D = tl.zeros((self.R, *self.Kn))
+        T = tl.zeros((In[0], self.R))
 
         # Beginning of the algorithm
         for r in range(self.R):
-            if frob_norm(Er) > self.epsilon and frob_norm(Fr) > self.epsilon:
+            if tl.norm(Er) > self.epsilon and tl.norm(Fr) > self.epsilon:
                 Cr = cov(Er, Fr)
                 # HOOI tucker decomposition of C
                 _, latents = tucker(
@@ -256,10 +232,10 @@ class HOPLS:
         M = len(self.Kn)
         G_pi = []
         if len(Y.shape) == 2:
-            Q_star = torch.zeros(Q.shape)
+            Q_star = tl.zeros(Q.shape)
         else:
             Q_star = []
-        W = torch.zeros((*X.shape[1:], self.R)).reshape(-1, self.R)
+        W = tl.zeros((*X.shape[1:], self.R)).reshape(-1, self.R)
         for r in range(self.R):
             G_pi.append(pinv(G[r]))
             W[:, r] = np.matmul(
