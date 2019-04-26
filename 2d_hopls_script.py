@@ -27,44 +27,34 @@ def qsquared(y_true, y_pred):
     return 1 - ((norm(y_true - y_pred) ** 2) / (norm(y_true) ** 2))
 
 
-snr = 10
-T = tl.tensor(np.random.normal(size=(100, 5)))
-P = tl.tensor(np.random.normal(size=(5, 10, 10)))
-Q = tl.tensor(np.random.normal(size=(5, 5)))
-E = tl.tensor(np.random.normal(size=(100, 10, 10)))
-F = tl.tensor(np.random.normal(size=(100, 5)))
-X = mode_dot(P, T, 0)
-Y = mode_dot(Q, T, 0)
-epsilon = 1 / (10 ** (snr / 10))
-noisy_X = X + epsilon * E
-noisy_Y = Y + epsilon * F
-og_X = torch.Tensor(noisy_X)
-og_Y = torch.Tensor(noisy_Y)
+dat = loadmat("data_X3_Y2_0dB.mat")
+og_X = torch.Tensor(dat["X"])
+og_Y = torch.Tensor(dat["Y"])
 
-# X = tl.unfold(og_X, 0)
-# Y = tl.unfold(og_Y, 0)
-# X_train = X[:60]
-# Y_train = Y[:60]
-# X_valid = X[60:80]
-# Y_valid = Y[60:80]
-# X_test = X[80:100]
-# Y_test = Y[80:100]
+X = tl.unfold(og_X, 0)
+Y = tl.unfold(og_Y, 0)
+X_train = X[:60]
+Y_train = Y[:60]
+X_valid = X[60:80]
+Y_valid = Y[60:80]
+X_test = X[80:100]
+Y_test = Y[80:100]
 
-# old_Q2 = -float("Inf")
-# for R in range(1, 20):
-#     test = PLSRegression(n_components=R)
-#     test.fit(X_train, Y_train)
-#     PLS_X_test = tl.unfold(X_valid, 0)
-#     PLS_Y_test = tl.unfold(Y_valid, 0)
-#     Y_pred = torch.Tensor(test.predict(X_valid))
-#     Q2 = qsquared(Y_valid, Y_pred)
-#     if Q2 > old_Q2:
-#         best_params = {"R": R, "score": Q2, "pred": Y_pred}
-#         old_Q2 = Q2
-#
-# print("PLS sanity check")
-# print("best param is R=" + str(best_params["R"]))
-# print("Q2: " + str(float(Q2)))
+old_Q2 = -float("Inf")
+for R in range(1, 20):
+    test = PLSRegression(n_components=R)
+    test.fit(X_train, Y_train)
+    PLS_X_test = tl.unfold(X_valid, 0)
+    PLS_Y_test = tl.unfold(Y_valid, 0)
+    Y_pred = torch.Tensor(test.predict(X_valid))
+    Q2 = qsquared(Y_valid, Y_pred)
+    if Q2 > old_Q2:
+        best_params = {"R": R, "score": Q2, "pred": Y_pred}
+        old_Q2 = Q2
+
+print("PLS sanity check")
+print("best param is R=" + str(best_params["R"]))
+print("Q2: " + str(float(Q2)))
 
 X = og_X[:60]
 Y = og_Y[:60]
