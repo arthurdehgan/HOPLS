@@ -11,6 +11,34 @@ from torch import norm, svd, pinverse as pinv
 tl.set_backend("pytorch")
 
 
+def mmt(X,Y,N):
+    if type(Y) is list:
+        ndim = len(Y)
+        for i in range(ndim):
+            X = mmt(X,Y[i],i+1)
+        Y = X
+    else:
+        n = N
+        N = len(X.shape)
+        sz = X.shape
+        xp = set([x for x in range(N)])
+        xp.remove(n)
+        order = list([n]+ list(xp))
+        newdata = X.permute((order))
+        newdata = np.reshape(newdata,(sz[n],np.prod([sz[i] for i in list(xp)])),order='F')
+        lm = np.tensordot(Y.transpose(0,1),newdata,(1,0))
+        
+        p = np.shape(Y)[1]
+        newsz = [p] + [sz[i] for i in list(xp)]
+        Y = np.reshape(lm,(newsz),order='F')
+        Y = torch.Tensor(Y)
+        inverse = [0] * len(order)
+        for i, p in enumerate(order):
+            inverse[p] = i
+        iorder = inverse
+        Y = Y.permute((iorder))
+    return Y
+
 def cov(A, B):
     C = torch.zeros(*(list(A.shape[1:]) + list(B.shape[1:])))
     dim = len(A.shape[1:])
@@ -87,7 +115,8 @@ for r in range(R):
     # Getting P and Q loadings
     qr = latents[0]
     Pr = latents[1:]
-    tr = multi_mode_dot(Er, Pr, list(range(1, len(Pr) + 1)), transpose=True)
+    tr = mmt(Er,Pr,0)
+    # tr = multi_mode_dot(Er, Pr, list(range(1, len(Pr) + 1)), transpose=True)
     Gr_pi = pinv(tl.unfold(Gr, 0))
     tr = torch.mm(tl.unfold(tr, 0), Gr_pi)
     tr /= norm(tr)
