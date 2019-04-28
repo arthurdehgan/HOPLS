@@ -65,7 +65,7 @@ for i in range(X.shape[0]):
 
 Ln = [2] * (len(X.shape) - 1)
 
-R = 5
+R = 4
 In = X.shape
 N = len(Ln)
 M = Y.shape[-1]
@@ -76,7 +76,6 @@ Q = tl.zeros((M, R))
 T = tl.zeros((X.shape[0], R))
 D = torch.zeros((R, R))
 Gr, _ = tucker(Er, ranks=[1] + Ln)
-
 # Beginning of the algorithm
 for r in range(R):
     # computing the covariance
@@ -105,11 +104,11 @@ for r in range(R):
 
     Q[:, r] = qr.view(-1)
     T[:, r] = tr.view(-1)
-    X_hat = torch.mm(tr, Pr)
+    X_hat = torch.mm(T, P.t())
 
     # Deflation
-    Er = Er - X_hat.view(Er.shape)
-    Fr = Fr - dr * torch.mm(tr, qr.transpose(0, 1))
+    Er = Er - np.reshape(X_hat, (Er.shape),order='F')
+    Fr = Fr -(dr*torch.mm(tr, qr.transpose(0, 1)))
 
 
 Wfin = []
@@ -119,8 +118,8 @@ for r in range(R):
     Wfin.append(
         torch.mm(W_star, torch.mm(D[: r + 1, : r + 1], Q[:, : r + 1].transpose(0, 1)))
     )
-
-Y_pred = torch.mm(tl.unfold(X, 0), Wfin[-1])
+x_unfold = np.reshape(X,(-1,np.prod([x for x in X.shape[1:]])),order='F')
+Y_pred = torch.mm(x_unfold, Wfin[-1])
 
 Q2 = qsquared(Y, Y_pred)
 print("HOPLS")
