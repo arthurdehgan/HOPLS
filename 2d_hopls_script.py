@@ -54,8 +54,26 @@ def qsquared(y_true, y_pred):
     """Compute the Q^2 Error between two arrays."""
     return 1 - ((norm(y_true - y_pred) ** 2) / (norm(y_true) ** 2))
 
+def matricize(data):
+    return np.reshape(data,(-1,np.prod([x for x in data.shape[1:]])),order='F')
 
-dat = loadmat("data_X3_Y2_0dB.mat")
+def remove_mean(data):
+    shape = tl.unfold(data[0],0).shape
+    X_norm = torch.zeros(shape)
+    for i in range(data.shape[0]):
+        X_norm += tl.unfold(data[i],0)
+    X_norm/=data.shape[0]
+    
+    for i in range(data.shape[0]):
+#         data[i] -= X_norm.squeeze()
+        data[i] -= np.reshape(X_norm,(data.shape[1:]))
+    return data
+
+# dat = loadmat("lo_data_-5dB.mat")
+# og_X = torch.Tensor(dat["data"])
+# og_Y = torch.Tensor(dat["target"])
+
+dat = loadmat("data_X5_Y2_0dB.mat")
 og_X = torch.Tensor(dat["X"])
 og_Y = torch.Tensor(dat["Y"])
 
@@ -69,7 +87,7 @@ X_test = X[80:100]
 Y_test = Y[80:100]
 
 old_Q2 = -float("Inf")
-for R in range(1, 20):
+for R in range(1, 10):
     test = PLSRegression(n_components=R)
     test.fit(X_train, Y_train)
     PLS_X_test = tl.unfold(X_valid, 0)
@@ -87,72 +105,99 @@ print("Q2: " + str(float(Q2)))
 X = og_X[:60]
 Y = og_Y[:60]
 
-for i in range(X.shape[0]):
-    X[i] -= torch.mean(X[i]) * torch.ones(X[i].shape)
-    Y[i] -= torch.mean(Y[i]) * torch.ones(Y[i].shape)
-
-Ln = [2] * (len(X.shape) - 1)
-
-R = 4
-In = X.shape
-N = len(Ln)
-M = Y.shape[-1]
-Er, Fr = X, Y
-P = tl.zeros((*X.shape[1:], R)).reshape(-1, R)
-W = tl.zeros((*X.shape[1:], R)).reshape(-1, R)
-Q = tl.zeros((M, R))
-T = tl.zeros((X.shape[0], R))
-D = torch.zeros((R, R))
-Gr, _ = tucker(Er, ranks=[1] + Ln)
-# Beginning of the algorithm
-for r in range(R):
-    # computing the covariance
-    Cr = mode_dot(Er, Fr.transpose(0, 1), 0)
-
-    # HOOI tucker decomposition of C
-    _, latents = tucker(Cr, ranks=[1] + Ln)
-
-    # Getting P and Q loadings
-    qr = latents[0]
-    Pr = latents[1:]
-    tr = mmt(Er,Pr,0)
-    # tr = multi_mode_dot(Er, Pr, list(range(1, len(Pr) + 1)), transpose=True)
-    Gr_pi = pinv(tl.unfold(Gr, 0))
-    tr = torch.mm(tl.unfold(tr, 0), Gr_pi)
-    tr /= norm(tr)
-
-    # recomposition of the core tensors
-    ur = torch.mm(Fr, qr)
-    dr = torch.mm(ur.transpose(0, 1), tr)
-    D[r, r] = dr
-
-    Pkron = kronecker([Pr[N - n - 1] for n in range(N)])
-    W[:, r] = torch.mm(Pkron, Gr_pi).view(1, -1)
-    Pr = torch.mm(tl.unfold(Gr, 0), Pkron.transpose(0, 1))
-    P[:, r] = Pr
-
-    Q[:, r] = qr.view(-1)
-    T[:, r] = tr.view(-1)
-    X_hat = torch.mm(T, P.t())
-
-    # Deflation
-    Er = Er - np.reshape(X_hat, (Er.shape),order='F')
-    Fr = Fr -(dr*torch.mm(tr, qr.transpose(0, 1)))
+# for i in range(X.shape[0]):
+#     X[i] -= torch.mean(X[i]) * torch.ones(X[i].shape)
+#     Y[i] -= torch.mean(Y[i]) * torch.ones(Y[i].shape)
 
 
-Wfin = []
-for r in range(R):
-    inter = pinv(torch.mm(P[:, : r + 1].transpose(0, 1), W[:, : r + 1]))
-    W_star = torch.mm(W[:, : r + 1], inter)
-    Wfin.append(
-        torch.mm(W_star, torch.mm(D[: r + 1, : r + 1], Q[:, : r + 1].transpose(0, 1)))
-    )
-x_unfold = np.reshape(X,(-1,np.prod([x for x in X.shape[1:]])),order='F')
-Y_pred = torch.mm(x_unfold, Wfin[-1])
+X = remove_mean(X)
+Y = remove_mean(Y)
 
-Q2 = qsquared(Y, Y_pred)
+best_Q2 = 0
+best_lambda = 0
+for lam in range(1,10):
+# lam = 3
+
+    Ln = [lam] * (len(X.shape) - 1)
+    modes = [x for x in range(len(X.shape))]
+    R = 50
+    In = X.shape
+    N = len(Ln)
+    M = Y.shape[-1]
+    Er, Fr = X, Y
+    P = tl.zeros((*X.shape[1:], R)).reshape(-1, R)
+    W = tl.zeros((*X.shape[1:], R)).reshape(-1, R)
+    Q = tl.zeros((M, R))
+    T = tl.zeros((X.shape[0], R))
+    D = torch.zeros((R, R))
+    Gr, _ = tucker(Er, ranks=[1]+Ln)
+    Gr = Gr
+    # Beginning of the algorithm
+    for r in range(R):
+        # computing the covariance
+        Cr = mode_dot(Er, Fr.transpose(0, 1), 0)
+        # Cr = mmt(Er,Fr,0)
+        # HOOI tucker decomposition of C
+        _, latents = tucker(Cr,ranks=[1]+Ln)
+
+        # Getting P and Q loadings
+        qr = latents[0]
+        Pr = latents[1:]
+        # tr = mmt(Er,Pr,0)
+        tr = multi_mode_dot(Er, Pr, list(range(1, len(Pr) + 1)), transpose=True)
+
+        Gr_pi = pinv(matricize(Gr))
+        
+        tr = torch.mm(matricize(tr), Gr_pi)
+        tr /= norm(tr)
+
+        # recomposition of the core tensors
+        ur = torch.mm(Fr, qr)
+        dr = torch.mm(ur.transpose(0, 1), tr)
+        D[r, r] = dr
+
+        Pkron = kronecker([Pr[N - n - 1] for n in range(N)])
+        W[:, r] = torch.mm(Pkron, Gr_pi).view(1, -1)
+        Pr_ = torch.mm(matricize(Gr), Pkron.transpose(0, 1))
+        P[:, r] = Pr_
+
+        Q[:, r] = qr.view(-1)
+        T[:, r] = tr.view(-1)
+        X_hat = torch.mm(T, P.t())
+        # X_hat = torch.mm(tr, Pr_)
+        # Deflation
+        Er = Er - np.reshape(X_hat, (Er.shape),order='F')
+        Fr = Fr -(dr*torch.mm(tr, qr.transpose(0, 1)))
+
+
+    Wfin = []
+    for r in range(R):
+        inter = pinv(torch.mm(P[:, : r + 1].transpose(0, 1), W[:, : r + 1]))
+        W_star = torch.mm(W[:, : r + 1], inter)
+        Wfin.append(
+            torch.mm(W_star, torch.mm(D[: r + 1, : r + 1], Q[:, : r + 1].transpose(0, 1)))
+        )
+    best_q2_lambda =0
+    best_r_lambda = 0
+    for i in range(R):
+        Y_pred = torch.mm(matricize(X), Wfin[i])
+        Q2 = qsquared(Y, Y_pred)
+        if Q2 > best_q2_lambda:
+            best_q2_lambda = Q2
+            best_r_lambda  = i+1
+            # print(Q2)
+        print(Q2,lam)
+    # print()
+    if best_q2_lambda>best_Q2:
+        best_Q2 = best_q2_lambda
+        best_r = best_r_lambda
+
+        best_lambda = lam
+
 print("HOPLS")
-print("Q2: " + str(Q2))
+print("Q2: " + str(best_Q2))
+print("Best R:"+str(best_r))
+print("Best Lambda:" + str(best_lambda))
 """
 PLot with modes on y and x and 3 curves of q2 scores for the 3 algorithms
 """
