@@ -11,6 +11,7 @@ from torch import norm, svd, pinverse as pinv
 tl.set_backend("pytorch")
 
 
+
 def mmt(X,Y,N):
     if type(Y) is list:
         ndim = len(Y)
@@ -38,6 +39,7 @@ def mmt(X,Y,N):
         iorder = inverse
         Y = Y.permute((iorder))
     return Y
+
 
 def cov(A, B):
     C = torch.zeros(*(list(A.shape[1:]) + list(B.shape[1:])))
@@ -102,8 +104,10 @@ print("PLS sanity check")
 print("best param is R=" + str(best_params["R"]))
 print("Q2: " + str(float(Q2)))
 
-X = og_X[:60]
-Y = og_Y[:60]
+# X = og_X[:60]
+X = normalize(og_X)
+# Y = og_Y[:60]
+Y = normalize(og_Y)
 
 # for i in range(X.shape[0]):
 #     X[i] -= torch.mean(X[i]) * torch.ones(X[i].shape)
