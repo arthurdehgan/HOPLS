@@ -11,6 +11,16 @@ from torch import norm, svd, pinverse as pinv
 tl.set_backend("pytorch")
 
 
+def normalize(A):
+    shape = tl.unfold(A[0], 0).shape
+    X_norm = torch.zeros(shape)
+    for i in range(A.shape[0]):
+        X_norm += tl.unfold(A[i], 0) / len(A)
+    for i in range(A.shape[0]):
+        A[i] -= X_norm.squeeze()
+    return A
+
+
 def cov(A, B):
     C = torch.zeros(*(list(A.shape[1:]) + list(B.shape[1:])))
     dim = len(A.shape[1:])
@@ -56,16 +66,14 @@ print("PLS sanity check")
 print("best param is R=" + str(best_params["R"]))
 print("Q2: " + str(float(Q2)))
 
-X = og_X[:60]
-Y = og_Y[:60]
+# X = og_X[:60]
+X = normalize(og_X)
+# Y = og_Y[:60]
+Y = normalize(og_Y)
 
-for i in range(X.shape[0]):
-    X[i] -= torch.mean(X[i]) * torch.ones(X[i].shape)
-    Y[i] -= torch.mean(Y[i]) * torch.ones(Y[i].shape)
+Ln = [7] * (len(X.shape) - 1)
 
-Ln = [2] * (len(X.shape) - 1)
-
-R = 5
+R = 30
 In = X.shape
 N = len(Ln)
 M = Y.shape[-1]
@@ -105,7 +113,7 @@ for r in range(R):
 
     Q[:, r] = qr.view(-1)
     T[:, r] = tr.view(-1)
-    X_hat = torch.mm(tr, Pr)
+    X_hat = torch.mm(T, P.transpose(0, 1))
 
     # Deflation
     Er = Er - X_hat.view(Er.shape)
@@ -120,9 +128,14 @@ for r in range(R):
         torch.mm(W_star, torch.mm(D[: r + 1, : r + 1], Q[:, : r + 1].transpose(0, 1)))
     )
 
-Y_pred = torch.mm(tl.unfold(X, 0), Wfin[-1])
+best = 0
+for r in range(R):
+    Y_pred = torch.mm(tl.unfold(X, 0), Wfin[r])
+    Q2 = qsquared(Y, Y_pred)
+    if Q2 > best:
+        best = Q2
+        best_r = R
 
-Q2 = qsquared(Y, Y_pred)
 print("HOPLS")
 print("Q2: " + str(Q2))
 """
