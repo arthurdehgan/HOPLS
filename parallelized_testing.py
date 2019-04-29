@@ -6,6 +6,23 @@ from sklearn.model_selection import KFold
 from sklearn.metrics import r2_score
 from scipy.io import loadmat, savemat
 from hopls import matricize, qsquared, HOPLS
+from joblib import Parallel, delayed
+
+
+def compute_q2_pls(tdata, tlabel, vdata, vlabel, Rval):
+    test = PLSRegression(n_components=Rval)
+    test.fit(matricize(tdata), matricize(tlabel))
+    Y_pred = test.predict(matricize(vdata))
+    Q2 = qsquared(matricize(vlabel), matricize(Y_pred))
+    return Q2
+
+
+def compute_q2_hopls(tdata, tlabel, vdata, vlabel, la):
+    Ln = [la] * (len(X.shape) - 1)
+    test = HOPLS(50, Ln)
+    test.fit(tdata, tlabel)
+    _, r, Q2 = test.predict(vdata, vlabel)
+    return r, Q2
 
 
 if __name__ == "__main__":
@@ -29,26 +46,28 @@ if __name__ == "__main__":
             X_valid = torch.Tensor(X[valid_idx])
             Y_valid = torch.Tensor(Y[valid_idx])
 
+            results = Parallel(n_jobs=-1)(
+                delayed(compute_q2_pls)(X_train, Y_train, X_valid, Y_valid, R)
+                for R in range(1, 50)
+            )
             old_Q2 = -np.inf
-            for R in range(1, 50):
-                test = PLSRegression(n_components=R)
-                test.fit(matricize(X_train), matricize(Y_train))
-                Y_pred = test.predict(matricize(X_valid))
-                Q2 = qsquared(matricize(Y_valid), matricize(Y_pred))
+            for i in range(49):
+                Q2 = results[i]
                 if Q2 > old_Q2:
-                    best_r = R
+                    best_r = i + 1
                     old_Q2 = Q2
             PLS_r.append(best_r)
             PLS_q2.append(Q2)
 
+            results = Parallel(n_jobs=-1)(
+                delayed(compute_q2_hopls)(X_train, Y_train, X_valid, Y_valid, lam)
+                for lam in range(1, 10)
+            )
             old_Q2 = -np.inf
-            for lam in range(1, 10):
-                Ln = [lam] * (len(X.shape) - 1)
-                test = HOPLS(50, Ln)
-                test.fit(X_train, Y_train)
-                Y_pred, r, Q2 = test.predict(X_valid, Y_valid)
+            for i in range(9):
+                r, Q2 = results[i]
                 if Q2 > old_Q2:
-                    best_lam = lam
+                    best_lam = i + 1
                     best_r = r
                     old_Q2 = Q2
 
