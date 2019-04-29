@@ -57,7 +57,7 @@ if __name__ == "__main__":
                     best_r = i + 1
                     old_Q2 = Q2
             PLS_r.append(best_r)
-            PLS_q2.append(Q2)
+            PLS_q2.append(old_Q2)
 
             results = Parallel(n_jobs=-1)(
                 delayed(compute_q2_hopls)(X_train, Y_train, X_valid, Y_valid, lam)
@@ -75,7 +75,7 @@ if __name__ == "__main__":
             # print("Q2: " + str(Q2))
             HOPLS_l.append(best_lam)
             HOPLS_r.append(best_r)
-            HOPLS_q2.append(Q2)
+            HOPLS_q2.append(old_Q2)
         # hyper.append(PLS_r)
         # mat.append(PLS_q2)
         print("PLS")
