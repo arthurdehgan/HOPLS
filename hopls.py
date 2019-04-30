@@ -11,21 +11,29 @@ torch.set_default_dtype(torch.float64)
 
 
 def matricize(data):
-    return torch.Tensor(
-        np.reshape(data, (-1, np.prod([x for x in data.shape[1:]])), order="F")
-    )
+    return torch.Tensor(np.reshape(data, (-1, np.prod(data.shape[1:])), order="F"))
 
 
-def remove_mean(data, X_norm=None):
-    if X_norm is None:
-        shape = tl.unfold(data[0], 0).shape
-        X_norm = torch.zeros(shape)
-        for i in range(data.shape[0]):
-            X_norm += tl.unfold(data[i], 0)
-        X_norm /= data.shape[0]
-    for i in range(data.shape[0]):
-        data[i] -= X_norm.reshape((data.shape[1:]))
-    return data, X_norm
+def remove_mean(data, mean=None):
+    if mean is None:
+        mean = []
+        for mat in data:
+            mean.append(torch.mean(mat))
+    for i, mat in enumerate(data):
+        data[i] -= mean[i] * torch.ones(data[i].shape)
+    return data, mean
+
+
+# def remove_mean(data, X_norm=None):
+#     if X_norm is None:
+#         shape = tl.unfold(data[0], 0).shape
+#         X_norm = torch.zeros(shape)
+#         for i in range(data.shape[0]):
+#             X_norm += matricize(data[i])
+#         X_norm /= data.shape[0]
+#     for i in range(data.shape[0]):
+#         data[i] -= X_norm.reshape((data.shape[1:]))
+#     return data, X_norm
 
 
 def rmsep(y_true, y_pred):
@@ -115,10 +123,9 @@ class HOPLS:
         """
 
         # Initialization
-        X, _ = remove_mean(X)
-        Y, self.mY = remove_mean(Y)
+        X, _ = remove_mean(X, [0] * len(X))
+        Y, self.mY = remove_mean(Y, [0] * len(Y))
         In = X.shape[1:]
-        I0 = X.shape[0]
         Er, Fr = X, Y
         P, T = [], []
         Q = tl.zeros((Y.shape[-1], self.R))
