@@ -14,46 +14,6 @@ def matricize(data):
     return torch.Tensor(np.reshape(data, (-1, np.prod(data.shape[1:])), order="F"))
 
 
-<<<<<<< HEAD
-def remove_mean(data, X_norm=None):
-    if X_norm is None:
-        shape = tl.unfold(data[0], 0).shape
-        X_norm = torch.zeros(shape)
-        for i in range(data.shape[0]):
-            X_norm += matricize(data[i])
-        X_norm /= data.shape[0]
-    for i in range(data.shape[0]):
-        data[i] -= X_norm.reshape((data.shape[1:]),order='F')
-    return data, X_norm
-=======
-def remove_mean(data, mean=None):
-    if mean is None:
-        mean = []
-        for mat in data:
-            mean.append(torch.mean(mat))
-    for i, mat in enumerate(data):
-        data[i] -= mean[i] * torch.ones(data[i].shape)
-    return data, mean
-
-
-# def remove_mean(data, X_norm=None):
-#     if X_norm is None:
-#         shape = tl.unfold(data[0], 0).shape
-#         X_norm = torch.zeros(shape)
-#         for i in range(data.shape[0]):
-#             X_norm += matricize(data[i])
-#         X_norm /= data.shape[0]
-#     for i in range(data.shape[0]):
-#         data[i] -= X_norm.reshape((data.shape[1:]))
-#     return data, X_norm
->>>>>>> 8202215b985265910410f569d1ecad50a80c8a99
-
-
-def rmsep(y_true, y_pred):
-    """Compute Root Mean Square Error between two arrays."""
-    return np.sqrt(np.mean((y_true - y_pred) ** 2, axis=0))
-
-
 def rmse(y_true, y_pred):
     """Compute Root Mean Square Percentage Error between two arrays."""
     return np.sqrt(np.mean((y_true - y_pred) ** 2, axis=0))
@@ -136,29 +96,24 @@ class HOPLS:
         """
 
         # Initialization
-        X, _ = remove_mean(X, [0] * len(X))
-        Y, self.mY = remove_mean(Y, [0] * len(Y))
-        In = X.shape[1:]
         Er, Fr = X, Y
-        P, T = [], []
-        Q = tl.zeros((Y.shape[-1], self.R))
-        G = tl.zeros((self.R, *self.Ln))
+        P, T, W, Q = [], [], [], []
         D = tl.zeros((self.R, self.R))
-        W = tl.zeros((*In, self.R)).reshape(-1, self.R)
-        Gr, _ = tucker(Er, ranks=[1] + self.Ln)
 
         # Beginning of the algorithm
+        Gr, _ = tucker(Er, ranks=[1] + self.Ln)
         for r in range(self.R):
             if torch.norm(Er) > self.epsilon and torch.norm(Fr) > self.epsilon:
                 # computing the covariance
-                Cr = mode_dot(Er, Fr.transpose(0, 1), 0)
+                Cr = mode_dot(Er, Fr.t(), 0)
 
                 # HOOI tucker decomposition of C
                 _, latents = tucker(Cr, ranks=[1] + self.Ln)
 
                 # Getting P and Q loadings
                 qr = latents[0]
-                Pr = latents[1:]
+                qr /= torch.norm(qr)
+                Pr = [a / torch.norm(a) for a in latents[1:]]
                 tr = multi_mode_dot(Er, Pr, list(range(1, len(Pr) + 1)), transpose=True)
                 Gr_pi = torch.pinverse(matricize(Gr))
                 tr = torch.mm(matricize(tr), Gr_pi)
@@ -166,28 +121,28 @@ class HOPLS:
 
                 # recomposition of the core tensor of Y
                 ur = torch.mm(Fr, qr)
-                dr = torch.mm(ur.transpose(0, 1), tr)
-                D[r, r] = dr
+                dr = torch.mm(ur.t(), tr)
 
+                D[r, r] = dr
                 Pkron = kronecker([Pr[self.N - n - 1] for n in range(self.N)])
-                W[:, r] = torch.mm(Pkron, Gr_pi).view(1, -1)
-                Pr = torch.mm(matricize(Gr), Pkron.transpose(0, 1))
-
-                # Gathering of R variables
-                Q[:, r] = qr.view(-1)
-                D[r, r] = dr
+                P.append(torch.mm(matricize(Gr), Pkron.t()).t())
+                W.append(torch.mm(Pkron, Gr_pi))
+                Q.append(qr)
                 T.append(tr)
-                temp_T = torch.cat(T, dim=1)
-                P.append(Pr)
-                temp_P = torch.cat(P)
 
                 # Deflation
-                X_hat = torch.mm(temp_T, temp_P)
+                X_hat = torch.mm(torch.cat(T, dim=1), torch.cat(P, dim=1).t())
                 Er = X - np.reshape(X_hat, (Er.shape), order="F")
-                Fr = Fr - dr * torch.mm(tr, qr.transpose(0, 1))
+                Fr = Fr - dr * torch.mm(tr, qr.t())
             else:
                 break
-        self.model = (temp_P, Q, G, D, temp_T, W)
+
+        Q = torch.cat(Q, dim=1)
+        T = torch.cat(T, dim=1)
+        P = torch.cat(P, dim=1)
+        W = torch.cat(W, dim=1)
+
+        self.model = (P, Q, D, T, W)
         return self
 
     def fit(self, X, Y):
@@ -283,23 +238,20 @@ class HOPLS:
         Returns:
             Y_pred: tensorly Tensor, The predicted Y from the model.
         """
-        P, Q, G, D, T, W = self.model
+        P, Q, D, _, W = self.model
         Wfin = []
-        for r in range(self.R):
-            inter = torch.pinverse(
-                torch.mm(P[: r + 1, :], W[:, : r + 1])
-                + 2e-16 * torch.diag(torch.rand(r + 1))
+        for r in range(1, self.R + 1):
+            W_star = torch.mm(
+                W[:, :r],
+                torch.pinverse(
+                    torch.mm(P[:, :r].t(), W[:, :r]) + 2e-12 * torch.diag(torch.rand(r))
+                ),
             )
-            W_star = torch.mm(W[:, : r + 1], inter)
-            Wfin.append(
-                torch.mm(
-                    W_star, torch.mm(D[: r + 1, : r + 1], Q[:, : r + 1].transpose(0, 1))
-                )
-            )
+            Wfin.append(torch.mm(W_star, torch.mm(D[:r, :r], Q[:, :r].t())))
         best_q2 = 0
         for r in range(self.R):
             Y_pred = torch.mm(matricize(X), Wfin[r])
-            Y_pred, _ = remove_mean(Y_pred, self.mY)
+            # Y_pred, _ = remove_mean(Y_pred, self.mY)
             Q2 = qsquared(Y, Y_pred)
             if Q2 > best_q2:
                 best_q2 = Q2
@@ -307,33 +259,6 @@ class HOPLS:
                 best_Y_pred = Y_pred
 
         return best_Y_pred, best_r, best_q2
-
-        # G_pi = []
-        # if len(Y.shape) == 2:
-        #     Q_star = tl.zeros(Q.shape)
-        # else:
-        #     Q_star = []
-        # W = tl.zeros((*X.shape[1:], self.R)).reshape(-1, self.R)
-        # for r in range(self.R):
-        #     G_pi.append(pinverse(G[r]))
-        #     W[:, r] = torch.mm(
-        #         kronecker([P[r][self.N - n - 1] for n in range(self.N)]),
-        #         G_pi[-1].reshape(-1),
-        #     )
-        #     if len(Y.shape) > 2:
-        #         Q_star.append(
-        #             torch.mm(
-        #                 D[r].reshape(-1),
-        #                 kronecker([Q[r][self.M - n - 1] for n in range(self.M)]).T,
-        #             )
-        #         )
-        #     else:
-        #         Q_star[:, r] = D[r, r] * Q[:, r]
-
-        # if len(Y.shape) > 2:
-        #     Q_star = tl.tensor(Q_star).T
-        # return torch.mm(torch.mm(tl.unfold(X, 0), W), Q_star.T).reshape(Y.shape)
-        # return torch.mm(T, Q_star.T).reshape(Y.shape)
 
     def score(self, X, Y):
         self.fit(X, Y)

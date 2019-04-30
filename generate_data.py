@@ -32,10 +32,17 @@ def generate(I1, In, Jm, X_mode, Y_mode=2, R=5, L=7, snr=10):
 
 
 if __name__ == "__main__":
-    noise = 0
-    modeY = 2
     R = 5
     L = 4
-    for modeX in [3, 4, 5, 6]:
-        X, Y = generate(20, 10, 10, modeX, Y_mode=modeY, R=R, L=L, snr=noise)
-        savemat(f"data_R{R}_L{L}_X{modeX}_Y{modeY}_{noise}dB", {"X": X, "Y": Y})
+    In = [6, 7, 8]
+    Jm = 9
+    noise = 0
+    X, Y = generate(20, In, Jm, len(In) + 1, Y_mode=2, R=R, L=L, snr=noise)
+    savemat(f"data_R{R}_L{L}_X4_Y2_{noise}dB", {"X": X, "Y": Y})
+    # noise = 0
+    # modeY = 2
+    # R = 5
+    # L = 4
+    # for modeX in [3, 4, 5, 6]:
+    #     X, Y = generate(20, 10, 10, modeX, Y_mode=modeY, R=R, L=L, snr=noise)
+    #     savemat(f"data_R{R}_L{L}_X{modeX}_Y{modeY}_{noise}dB", {"X": X, "Y": Y})
