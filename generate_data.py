@@ -5,17 +5,21 @@ from scipy.io import savemat
 
 
 def generate(I1, In, Jm, X_mode, Y_mode=2, R=5, L=7, snr=10):
+    if isinstance(In, int):
+        In = [In] * (X_mode - 1)
+    if isinstance(Jm, int):
+        Jm = [Jm] * (Y_mode - 1)
     T = tl.tensor(np.random.normal(size=(R, I1)))
     P = []
-    for _ in range(X_mode - 1):
-        P.append(tl.tensor(np.random.normal(size=(In, L)).T))
+    for i in range(X_mode - 1):
+        P.append(tl.tensor(np.random.normal(size=(In[i], L)).T))
     G = tl.tensor(np.random.normal(size=[R] + [L] * (X_mode - 1)))
     Q = []
     for i in range(Y_mode - 1):
-        Q.append(tl.tensor(np.random.normal(size=(Jm, L)).T))
+        Q.append(tl.tensor(np.random.normal(size=(Jm[i], L)).T))
     D = tl.tensor(np.random.normal(size=[R] + [L] * (Y_mode - 1)))
-    E = tl.tensor(np.random.normal(size=[I1] + [In] * (X_mode - 1)))
-    F = tl.tensor(np.random.normal(size=[I1] + [Jm] * (Y_mode - 1)))
+    E = tl.tensor(np.random.normal(size=[I1] + In))
+    F = tl.tensor(np.random.normal(size=[I1] + Jm))
 
     data = multi_mode_dot(G, [T] + P, np.arange(X_mode), transpose=True)
     target = multi_mode_dot(D, [T] + Q, np.arange(Y_mode), transpose=True)
