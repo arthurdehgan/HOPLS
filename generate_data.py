@@ -1,4 +1,4 @@
-mport numpy as np
+import numpy as np
 import tensorly as tl
 from tensorly.tenalg import mode_dot, multi_mode_dot
 from scipy.io import savemat
@@ -28,9 +28,10 @@ def generate(I1, In, Jm, X_mode, Y_mode=2, R=5, L=7, snr=10):
 
 
 if __name__ == "__main__":
-    for order in [3, 5]:
-        for noise in [10, 5, 0, -5]:
-            for modY in [2, 3, 5]:
-                X, Y = generate(100, 10, 10, order, snr=noise)
-                savemat(f"data_X{order}_Y{modY}_{noise}dB", {"X": X, "Y": Y})
-
+    noise = 0
+    modeY = 2
+    R = 5
+    L = 4
+    for modeX in [3, 4, 5, 6]:
+        X, Y = generate(20, 10, 10, modeX, Y_mode=modeY, R=R, L=L, snr=noise)
+        savemat(f"data_R{R}_L{L}_X{modeX}_Y{modeY}_{noise}dB", {"X": X, "Y": Y})

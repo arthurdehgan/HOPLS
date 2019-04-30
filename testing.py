@@ -9,10 +9,12 @@ from hopls import matricize, qsquared, HOPLS
 
 
 if __name__ == "__main__":
+    R_max = 20
     mat = []
     hyper = []
-    for i, snr in enumerate([10, 5, 0, -5]):
-        filename = f"../datasets/data_X5_Y2_{snr}dB.mat"
+
+    for i, snr in enumerate([0]):
+        filename = f"data_R5_L4_X5_Y2_{snr}dB.mat"
         print(filename)
         data = loadmat(filename)
         X = data["X"]
@@ -30,7 +32,7 @@ if __name__ == "__main__":
             Y_valid = torch.Tensor(Y[valid_idx])
 
             old_Q2 = -np.inf
-            for R in range(1, 50):
+            for R in range(1, R_max):
                 test = PLSRegression(n_components=R)
                 test.fit(matricize(X_train), matricize(Y_train))
                 Y_pred = test.predict(matricize(X_valid))
@@ -39,12 +41,12 @@ if __name__ == "__main__":
                     best_r = R
                     old_Q2 = Q2
             PLS_r.append(best_r)
-            PLS_q2.append(Q2)
+            PLS_q2.append(old_Q2)
 
             old_Q2 = -np.inf
             for lam in range(1, 10):
                 Ln = [lam] * (len(X.shape) - 1)
-                test = HOPLS(50, Ln)
+                test = HOPLS(R_max, Ln)
                 test.fit(X_train, Y_train)
                 Y_pred, r, Q2 = test.predict(X_valid, Y_valid)
                 if Q2 > old_Q2:
@@ -56,7 +58,7 @@ if __name__ == "__main__":
             # print("Q2: " + str(Q2))
             HOPLS_l.append(best_lam)
             HOPLS_r.append(best_r)
-            HOPLS_q2.append(Q2)
+            HOPLS_q2.append(old_Q2)
         # hyper.append(PLS_r)
         # mat.append(PLS_q2)
         print("PLS")
