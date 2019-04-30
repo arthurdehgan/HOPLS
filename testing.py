@@ -12,7 +12,7 @@ if __name__ == "__main__":
     mat = []
     hyper = []
     for i, snr in enumerate([10, 5, 0, -5]):
-        filename = f"data_X5_Y2_{snr}dB.mat"
+        filename = f"../datasets/data_X5_Y2_{snr}dB.mat"
         print(filename)
         data = loadmat(filename)
         X = data["X"]

@@ -21,10 +21,10 @@ def remove_mean(data, X_norm=None):
         shape = tl.unfold(data[0], 0).shape
         X_norm = torch.zeros(shape)
         for i in range(data.shape[0]):
-            X_norm += tl.unfold(data[i], 0)
+            X_norm += matricize(data[i])
         X_norm /= data.shape[0]
     for i in range(data.shape[0]):
-        data[i] -= X_norm.reshape((data.shape[1:]))
+        data[i] -= X_norm.reshape((data.shape[1:]),order='F')
     return data, X_norm
 
 
