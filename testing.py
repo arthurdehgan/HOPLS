@@ -1,73 +1,89 @@
-from itertools import product
+import torch
 import numpy as np
 import tensorly as tl
-from tensorly.tenalg.n_mode_product import mode_dot
 from sklearn.cross_decomposition import PLSRegression
-from sklearn.metrics import r2_score, mean_squared_error as mse
-from hopls import HOPLS, qsquared, rmsep
-from scipy.stats import zscore
+from sklearn.model_selection import KFold
+from sklearn.metrics import r2_score
+from scipy.io import loadmat, savemat
+from hopls import matricize, qsquared, HOPLS
+from joblib import Parallel, delayed
+
+
+def compute_q2_hopls(tdata, tlabel, vdata, vlabel, la):
+    Ln = [la] * (len(X.shape) - 1)
+    Km = [la] * (len(Y.shape) - 1)
+    test = HOPLS(50, Ln, Km)
+    test.fit(tdata, tlabel)
+    _, r, Q2 = test.predict(vdata, vlabel)
+    return r, Q2
 
 
 if __name__ == "__main__":
-    # Generation according to 4.1.1 of the paper equation (29)
-    T = tl.tensor(np.random.normal(size=(10, 5)))
-    P = tl.tensor(np.random.normal(size=(5, 10, 10)))
-    Q = tl.tensor(np.random.normal(size=(5, 10, 10)))
-    # Q = tl.tensor(np.random.normal(size=(5, 12)))
-    E = tl.tensor(np.random.normal(size=(10, 10, 10)))
-    F = tl.tensor(np.random.normal(size=(10, 10, 10)))
-    X = mode_dot(P, T, 0)
-    Y = mode_dot(Q, T, 0)
+    R_max = 20
+    mat = []
+    hyper = []
 
-    # hyperparameters_search(X, Y, verbose=True)
+    for i, snr in enumerate([0]):
+        filename = f"dataset/data_s20_X3_Y3_0dB.mat"
+        print(filename)
+        data = loadmat(filename)
+        X = data["X"]
+        Y = data["Y"]
+        cv = KFold(2)
+        PLS_r = []
+        PLS_q2 = []
+        HOPLS_l = []
+        HOPLS_r = []
+        HOPLS_q2 = []
+        for train_idx, valid_idx in cv.split(X, Y):
+            X_train = torch.Tensor(X[train_idx])
+            Y_train = torch.Tensor(Y[train_idx])
+            X_valid = torch.Tensor(X[valid_idx])
+            Y_valid = torch.Tensor(Y[valid_idx])
 
-    # see TABLE 1 for R and lambda values of PLS and HOPLS
-    R_list = [5, 5, 3, 3]
-    R_ho_list = [9, 7, 5, 3]
-    lambda_list = [6, 5, 4, 5]
-    for i, snr in enumerate([10, 5, 0, -5]):
-        epsilon = 1 / (10 ** (snr / 10))
-        noisy_X = X + epsilon * E
-        noisy_Y = Y + epsilon * E
+            old_Q2 = -np.inf
+            for R in range(1, R_max):
+                test = PLSRegression(n_components=R)
+                test.fit(matricize(X_train), matricize(Y_train))
+                Y_pred = test.predict(matricize(X_valid))
+                Q2 = qsquared(matricize(Y_valid), matricize(Y_pred))
+                if Q2 > old_Q2:
+                    best_r = R
+                    old_Q2 = Q2
+            PLS_r.append(best_r)
+            PLS_q2.append(old_Q2)
 
-        print("\n PLS SNR=" + str(snr) + "dB")
-        test = PLSRegression(n_components=R_list[i])
-        PLS_X = tl.unfold(noisy_X, 0)
-        PLS_Y = tl.unfold(noisy_Y, 0)
-        test.fit(PLS_X, PLS_Y)
-        Y_pred = test.predict(PLS_X)
-        Y_pred = zscore(Y_pred)
-        PLS_Y = zscore(PLS_Y)
-        print("Q2: " + str(qsquared(PLS_Y, Y_pred)))
-        print("R2: " + str(r2_score(PLS_Y, Y_pred)))
-        print("RMSEP: " + str(np.mean(rmsep(PLS_Y, Y_pred))))
+            results = Parallel(n_jobs=-1)(
+                delayed(compute_q2_hopls)(X_train, Y_train, X_valid, Y_valid, lam)
+                for lam in range(1, 10)
+            )
+            old_Q2 = -np.inf
+            for i in range(8):
+                r, Q2 = results[i]
+                if Q2 > old_Q2:
+                    best_lam = i + 1
+                    best_r = r
+                    old_Q2 = Q2
 
-        print("\n HOPLS SNR=" + str(snr) + "dB")
-        l = lambda_list[i]
-        hop = HOPLS(R=R_ho_list[i], Ln=[l, l], Kn=[l, l])
-        hopls = hop.fit(noisy_X, noisy_Y)
-        Y_pred_hopls = hop.predict(noisy_X, noisy_Y)
-        Y_pred_hopls = tl.unfold(zscore(Y_pred_hopls), 0)
-        noisy_Y = tl.unfold(zscore(noisy_Y), 0)
-        print("Q2: " + str(qsquared(noisy_Y, Y_pred_hopls)))
-        print("R2: " + str(r2_score(noisy_Y, Y_pred_hopls)))
-        print("RMSEP: " + str(np.mean(rmsep(noisy_Y, Y_pred_hopls))))
-
-    # Q_err = Parallel(n_jobs=-1)(delayed(generate_and_test)() for _ in range(100))
-    # print(np.mean(Q_err))
-    # err = Parallel(n_jobs=-1)(delayed(generate_and_test)(rmsep) for _ in range(100))
-    # print(np.mean(err))
-    # r2err = Parallel(n_jobs=-1)(
-    #     delayed(generate_and_test)(r2_score) for _ in range(100)
+            # print("best param is R=" + str(best_params["R"]))
+            # print("Q2: " + str(Q2))
+            HOPLS_l.append(best_lam)
+            HOPLS_r.append(best_r)
+            HOPLS_q2.append(old_Q2)
+        # hyper.append(PLS_r)
+        # mat.append(PLS_q2)
+        print("PLS")
+        print(PLS_r, np.mean(PLS_q2))
+        print("HOPLS")
+        print(HOPLS_r)
+        print(HOPLS_l)
+        print([float(a) for a in HOPLS_q2])
+        # print(
+        #     np.mean(HOPLS_q2[:5]),
+        #     np.mean(HOPLS_q2[5:10]),
+        #     np.mean(HOPLS_q2[10:15]),
+        #     np.mean(HOPLS_q2[15:20]),
+        # )
+    # savemat(
+    #     "PLS_res.mat", {"best_ncomp_test": np.array(hyper), "q2_test": np.asarray(mat)}
     # )
-    # print(np.mean(r2err))
-    # mserr = Parallel(n_jobs=-1)(delayed(generate_and_test)(mse) for _ in range(100))
-    # print(np.mean(mserr))
-
-    # for snr in [10, 5, 0, -5, -10]:
-    #     print(f"SNR={snr}")
-    #     epsilon = 1 / (10 ** (snr / 10))
-    #     noisy_X = X + epsilon * E
-    #     noisy_Y = Y  # + epsilon * F
-
-    #     hyperparameters_search(noisy_X, noisy_Y)
