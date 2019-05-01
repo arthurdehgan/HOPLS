@@ -191,15 +191,12 @@ class HOPLS:
         # Initialization
         Er, Fr = X, Y
         In = X.shape
-        P, Q = [], []
-        G = tl.zeros((self.R, *self.Ln))
-        D = tl.zeros((self.R, *self.Km))
-        T = tl.zeros((In[0], self.R))
+        T, G, P, Q, D, W = [], [], [], [], [], []
 
         # Beginning of the algorithm
         for r in range(self.R):
             if torch.norm(Er) > self.epsilon and torch.norm(Fr) > self.epsilon:
-                Cr = np.tensordot(Er, Fr, (0, 0))
+                Cr = torch.Tensor(np.tensordot(Er, Fr, (0, 0)))
                 # HOOI tucker decomposition of C
                 _, latents = tucker(Cr, ranks=self.Ln + self.Km)
 
@@ -217,20 +214,26 @@ class HOPLS:
                 # recomposition of the core tensors
                 Gr = tl.tucker_to_tensor(Er, [tr] + Pr, transpose_factors=True)
                 Dr = tl.tucker_to_tensor(Fr, [tr] + Qr, transpose_factors=True)
+                Pkron = kronecker([Pr[self.N - n - 1] for n in range(self.N)])
+                Gr_pi = torch.pinverse(matricize(Gr))
+                W.append(torch.mm(Pkron, Gr_pi))
 
                 # Gathering of
                 P.append(Pr)
                 Q.append(Qr)
-                G[r] = Gr[0]
-                D[r] = Dr[0]
-                T[:, r] = tr[:, 0]
+                G.append(Gr)
+                D.append(Dr)
+                T.append(tr)
 
                 # Deflation
                 Er = Er - tl.tucker_to_tensor(Gr, [tr] + Pr)
                 Fr = Fr - tl.tucker_to_tensor(Dr, [tr] + Qr)
             else:
                 break
-        self.model = (P, Q, G, D, T)
+
+        T = torch.cat(T, dim=1)
+        W = torch.cat(W, dim=1)
+        self.model = (P, Q, D, T, W)
         return self
 
     def predict(self, X, Y):
@@ -247,14 +250,17 @@ class HOPLS:
         """
         _, Q, D, _, W = self.model
         best_q2 = -np.inf
+        if len(Y.shape) > 2:
+            Q_star = []
+            for r in range(self.R):
+                Qkron = kronecker([Q[r][self.M - m - 1] for m in range(self.M)])
+                Q_star.append(torch.mm(matricize(D[r][np.newaxis, ...]), Qkron.t()))
+            Q_star = torch.cat(Q_star)
         for r in range(1, self.R + 1):
             if len(Y.shape) == 2:
-                W_star = torch.mm(D[:r, :r], Q[:, :r].t())
-            else:
-                Qkron = kronecker([Q[self.N - n - 1] for n in range(self.N)])
-                W_star = torch.mm(matricize(D[r]), Qkron.t())
-
-            Y_pred = torch.mm(matricize(X), torch.mm(W[:, :r], W_star))
+                Q_star = torch.mm(D[:r, :r], Q[:, :r].t())
+            inter = torch.mm(W[:, :r], Q_star[:r])
+            Y_pred = np.reshape(torch.mm(matricize(X), inter), Y.shape, order="F")
             Q2 = qsquared(Y, Y_pred)
             if Q2 > best_q2:
                 best_q2 = Q2

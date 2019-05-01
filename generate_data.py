@@ -11,6 +11,7 @@ def generate(I1, In, Jm, X_mode=None, Y_mode=None, R=5, snr=10):
         assert 1, "X_mode should not be set to None if In is an int"
     else:
         In = (X_mode - 1) * [In]
+    X_shape = [I1] + list(In)
 
     if isinstance(Jm, tuple) or isinstance(Jm, list):
         Y_mode = len(Jm) + 1
@@ -18,6 +19,7 @@ def generate(I1, In, Jm, X_mode=None, Y_mode=None, R=5, snr=10):
         assert 1, "Y_mode should not be set to None if Jn is an int"
     else:
         Jm = (Y_mode - 1) * [Jm]
+    Y_shape = [I1] + list(Jm)
 
     T = np.random.normal(size=(I1, R))
     G = np.random.normal(size=(np.prod(In), R))
@@ -32,7 +34,7 @@ def generate(I1, In, Jm, X_mode=None, Y_mode=None, R=5, snr=10):
     data = data + epsilon * E
     target = target + epsilon * F
 
-    return data, target
+    return data.reshape(X_shape, order="F"), target.reshape(Y_shape, order="F")
 
 
 def generate_complex(I1, In, Jm, X_mode=None, Y_mode=2, R=5, L=7, snr=10):
@@ -73,11 +75,18 @@ def generate_complex(I1, In, Jm, X_mode=None, Y_mode=2, R=5, L=7, snr=10):
 
 
 if __name__ == "__main__":
-    for i in range(20):
-        for snr in [5, 0, -2, -5]:
-            for In in [[20, 10], [20, 10, 20], [20, 10, 20, 10]]:
-                for Jm in [[5], [5, 10], [5, 10, 5]]:
-                    X, Y = generate(10, In, Jm, R=5, snr=snr)
-                    savemat(
-                        f"data{i}_X{len(In)+1}_Y{len(Jm)+1}_{snr}dB", {"X": X, "Y": Y}
-                    )
+    I1 = 20
+    In = (10, 10)
+    Jm = (10, 10)
+    snr = 0
+    X, Y = generate(10, In, Jm, R=5, snr=snr)
+    savemat(f"dataset/data_s{I1}_X{len(In)+1}_Y{len(Jm)+1}_{snr}dB", {"X": X, "Y": Y})
+    # for i in range(20):
+    #     for snr in [5, 0, -2, -5]:
+    #         for In in [[20, 10], [20, 10, 20], [20, 10, 20, 10]]:
+    #             for Jm in [[10], [10, 5], [10, 5, 10]]:
+    #                 X, Y = generate(10, In, Jm, R=5, snr=snr)
+    #                 savemat(
+    #                     f"dataset/data{i}_X{len(In)+1}_Y{len(Jm)+1}_{snr}dB",
+    #                     {"X": X, "Y": Y},
+    #                 )
