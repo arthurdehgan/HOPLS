@@ -100,9 +100,7 @@ def do_testing(i, data_type, ss, X_mode, Y_mode, snr, lambda_max=10, R_max=20):
 
 
 if __name__ == "__main__":
-    ARGS = sys.argv[1:]
-    data_type = ARGS[0]
-    ss, X_mode, Y_mode, snr = list(map(int, ARGS[1:]))
+    data_type, ss, X_mode, Y_mode, snr = sys.argv[1:]
     # normalization = None  # 'remove_mean', 'zscore', 'normalize'
     # SNR = [5, 0, -2, -5]
     # modeY = [2, 3, 4]
