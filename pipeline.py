@@ -69,9 +69,9 @@ def do_testing(i, data_type, ss, X_mode, Y_mode, snr, lambda_max=10, R_max=20):
         for R in range(1, R_max):
             results.append(compute_q2_pls(X_train, Y_train, X_valid, Y_valid, R))
         old_Q2 = -np.inf
+        PLS_hyper[fold] = results
         for i in range(len(results)):
             Q2 = results[i]
-            PLS_hyper[fold, i] = Q2
             if Q2 > old_Q2:
                 best_r = i + 1
                 old_Q2 = Q2
