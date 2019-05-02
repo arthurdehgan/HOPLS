@@ -33,18 +33,22 @@ def compute_q2_hopls(tdata, tlabel, vdata, vlabel, la, R_max=20):
 
 
 def do_testing(i, data_type, ss, X_mode, Y_mode, snr, lambda_max=10, R_max=20):
+    PATH = "./"
     if data_type == "simple":
         data_type = ""
     elif data_type == "complex":
         data_type = "complex_"
-    resname = f"results/res{i}_{data_type}s{ss}_X{X_mode}_Y{Y_mode}_{snr}dB.mat"
+    resname = PATH + f"results/res{i}_{data_type}s{ss}_X{X_mode}_Y{Y_mode}_{snr}dB.mat"
     if os.path.exists(resname):
         return
-    filename = f"dataset/data{i}_{data_type}s{ss}_X{X_mode}_Y{Y_mode}_{snr}dB.mat"
+    filename = (
+        PATH + f"dataset/data{i}_{data_type}s{ss}_X{X_mode}_Y{Y_mode}_{snr}dB.mat"
+    )
     data = loadmat(filename)
     X = data["X"]
     Y = data["Y"]
     cv = KFold(n_folds)
+    fold = 0
     PLS_r = []
     PLS_q2 = []
     HOPLS_l = []
@@ -52,6 +56,8 @@ def do_testing(i, data_type, ss, X_mode, Y_mode, snr, lambda_max=10, R_max=20):
     HOPLS_q2 = []
     NPLS_r = []
     NPLS_q2 = []
+    PLS_hyper = np.zeros(n_folds, R_max)
+    HOPLS_hyper = np.zeros(n_folds, lambda_max - 1, R_max)
     for train_idx, valid_idx in cv.split(X, Y):
         X_train = torch.Tensor(X[train_idx])
         Y_train = torch.Tensor(Y[train_idx])
@@ -64,6 +70,7 @@ def do_testing(i, data_type, ss, X_mode, Y_mode, snr, lambda_max=10, R_max=20):
         old_Q2 = -np.inf
         for i in range(len(results)):
             Q2 = results[i]
+            PLS_hyper[fold, i] = Q2
             if Q2 > old_Q2:
                 best_r = i + 1
                 old_Q2 = Q2
@@ -77,7 +84,9 @@ def do_testing(i, data_type, ss, X_mode, Y_mode, snr, lambda_max=10, R_max=20):
             )
         old_Q2 = -np.inf
         for i in range(1, len(results)):
-            r, Q2 = results[i]
+            r, Q2s = results[i]
+            HOPLS_hyper[fold, i - 1] = Q2s
+            Q2 = Q2s[r - 1]
             if Q2 > old_Q2:
                 best_lam = i + 1
                 best_r = r
@@ -87,6 +96,7 @@ def do_testing(i, data_type, ss, X_mode, Y_mode, snr, lambda_max=10, R_max=20):
         HOPLS_q2.append(old_Q2)
         NPLS_r.append(results[0][0])
         NPLS_q2.append(results[0][1])
+        fold += 1
     results = {
         "PLS_R": PLS_r,
         "PLS_Q2": PLS_q2,

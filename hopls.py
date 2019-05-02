@@ -256,18 +256,20 @@ class HOPLS:
                 Qkron = kronecker([Q[r][self.M - m - 1] for m in range(self.M)])
                 Q_star.append(torch.mm(matricize(D[r][np.newaxis, ...]), Qkron.t()))
             Q_star = torch.cat(Q_star)
+        q2s = []
         for r in range(1, self.R + 1):
             if len(Y.shape) == 2:
                 Q_star = torch.mm(D[:r, :r], Q[:, :r].t())
             inter = torch.mm(W[:, :r], Q_star[:r])
             Y_pred = np.reshape(torch.mm(matricize(X), inter), Y.shape, order="F")
             Q2 = qsquared(Y, Y_pred)
+            q2s.append(Q2)
             if Q2 > best_q2:
                 best_q2 = Q2
                 best_r = r
                 best_Y_pred = Y_pred
 
-        return Y_pred, best_r, best_q2
+        return best_Y_pred, best_r, q2s
 
     def score(self, X, Y):
         self.fit(X, Y)
