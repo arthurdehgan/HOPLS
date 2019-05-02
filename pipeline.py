@@ -33,13 +33,13 @@ def compute_q2_hopls(tdata, tlabel, vdata, vlabel, la, R_max=20):
 
 
 def do_testing(i, data_type, ss, X_mode, Y_mode, snr, lambda_max=10, R_max=20):
-    resname = f"results/res{i}_{data_type}s{ss}_X{X_mode}_Y{Y_mode}_{snr}dB.mat"
-    if os.path.exists(resname):
-        return
     if data_type == "simple":
         data_type = ""
     elif data_type == "complex":
         data_type = "complex_"
+    resname = f"results/res{i}_{data_type}s{ss}_X{X_mode}_Y{Y_mode}_{snr}dB.mat"
+    if os.path.exists(resname):
+        return
     filename = f"dataset/data{i}_{data_type}s{ss}_X{X_mode}_Y{Y_mode}_{snr}dB.mat"
     data = loadmat(filename)
     X = data["X"]
