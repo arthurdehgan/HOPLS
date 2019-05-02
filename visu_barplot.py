@@ -13,6 +13,7 @@ Y_LABEL = "Q2"
 COLORS = list(sns.color_palette("deep"))
 WIDTH = .90
 GRAPH_TITLE = "comparaison of PLS algorithms"
+LOADPATH = "results/"
 
 RESOLUTION = 300
 
@@ -45,13 +46,10 @@ def generate_barplot(X_mode, Y_mode, ss, name):
     dat = []
     stds = []
     for lab in labels:
-        file_name = lab + _
-        temp = loadmat(file_name)["q2_test"].squeeze()[:4]
-        if len(temp.shape) > 1:
-            stds.append(np.std(temp[:, :4], axis=1))
-            temp = np.mean(temp[:, :4], axis=1)
-        else:
-            stds.append([0, 0, 0, 0])
+        filename = LOADPATH + lab + f"_results_{name}X{X_mode}_{Y_mode}_ss{ss}"
+        temp = loadmat(filename)["Q2"].squeeze()
+        stds.append(np.std(temp, axis=1))
+        temp = np.mean(temp, axis=1)
         dat.append(temp)
 
     dat = np.asarray(dat).T
@@ -89,7 +87,7 @@ def generate_barplot(X_mode, Y_mode, ss, name):
         ncol=len(labels),
     )
 
-    save_name = "barplot.png"
+    save_name = f"{name}s{ss}_X{X_mode}_Y{Y_mode}_barplot.png"
     fig.savefig(save_name, dpi=RESOLUTION)
 
 
@@ -99,4 +97,4 @@ if __name__ == "__main__":
     sample_sizes = [10, 20]
     names = ["", "complex_"]
     for X_mode, Y_mode, ss, name in product(modeX, modeY, sample_sizes, names):
-        generate_barplot(X_mode.Y_mode, ss, name)
+        generate_barplot(X_mode, Y_mode, ss, name)
