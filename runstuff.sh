@@ -2,9 +2,9 @@ for ss in 10 20
 do
 	for snr in 5 0 -2 -5
 	do
-		for nm in simple complex
+		for ym in 2 3
 		do
-			python pipeline.py $nm $ss 5 2 $snr
+			python pipeline.py simple $ss 3 $ym $snr
 		done
 	done
 done
