@@ -58,6 +58,7 @@ def do_testing(i, data_type, ss, X_mode, Y_mode, snr, lambda_max=10, R_max=20):
     NPLS_q2 = []
     PLS_hyper = np.zeros(n_folds, R_max)
     HOPLS_hyper = np.zeros(n_folds, lambda_max - 1, R_max)
+    NPLS_hyper = np.zeros(n_folds, R_max)
     for train_idx, valid_idx in cv.split(X, Y):
         X_train = torch.Tensor(X[train_idx])
         Y_train = torch.Tensor(Y[train_idx])
@@ -83,6 +84,7 @@ def do_testing(i, data_type, ss, X_mode, Y_mode, snr, lambda_max=10, R_max=20):
                 compute_q2_hopls(X_train, Y_train, X_valid, Y_valid, lam, R_max)
             )
         old_Q2 = -np.inf
+        NPLS_hyper[fold] = results[0][1]
         for i in range(1, len(results)):
             r, Q2s = results[i]
             HOPLS_hyper[fold, i - 1] = Q2s
@@ -94,8 +96,9 @@ def do_testing(i, data_type, ss, X_mode, Y_mode, snr, lambda_max=10, R_max=20):
         HOPLS_l.append(best_lam)
         HOPLS_r.append(best_r)
         HOPLS_q2.append(old_Q2)
-        NPLS_r.append(results[0][0])
-        NPLS_q2.append(results[0][1])
+        best_npls_r = results[0][0]
+        NPLS_r.append(best_npls_r)
+        NPLS_q2.append(results[0][1][best_npls_r - 1])
         fold += 1
     results = {
         "PLS_R": PLS_r,
@@ -105,6 +108,9 @@ def do_testing(i, data_type, ss, X_mode, Y_mode, snr, lambda_max=10, R_max=20):
         "HOPLS_Q2": HOPLS_q2,
         "NPLS_R": NPLS_r,
         "NPLS_Q2": NPLS_q2,
+        "PLS_hyp": PLS_hyper,
+        "NPLS_hyp": NPLS_hyper,
+        "HOPLS_hyp": HOPLS_hyper,
     }
     savemat(resname, results)
 
