@@ -9,7 +9,7 @@ sample_size = [10, 20]
 names = ["", "complex_"]
 n_datasets = 24
 
-for name, X_mode, Y_mode, ss in product(names, modeX, modeY, sample_size):
+for X_mode, Y_mode, name, ss in product(modeX, modeY, names, sample_size):
     print(name, X_mode, Y_mode, ss)
     fPLS_scores, fNPLS_scores, fHOPLS_scores = [], [], []
     fPLS_R, fNPLS_R, fHOPLS_R = [], [], []
