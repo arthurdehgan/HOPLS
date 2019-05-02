@@ -66,7 +66,7 @@ def do_testing(i, data_type, ss, X_mode, Y_mode, snr, lambda_max=10, R_max=20):
         Y_valid = torch.Tensor(Y[valid_idx])
 
         results = []
-        for R in range(1, R_max):
+        for R in range(1, R_max + 1):
             results.append(compute_q2_pls(X_train, Y_train, X_valid, Y_valid, R))
         old_Q2 = -np.inf
         PLS_hyper[fold] = results
