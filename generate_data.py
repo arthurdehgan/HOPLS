@@ -75,18 +75,19 @@ def generate_complex(I1, In, Jm, X_mode=None, Y_mode=2, R=5, L=7, snr=10):
 
 
 if __name__ == "__main__":
-    I1 = 20
-    In = (10, 10)
-    Jm = (10, 10)
-    snr = 0
-    X, Y = generate(10, In, Jm, R=5, snr=snr)
-    savemat(f"dataset/data_s{I1}_X{len(In)+1}_Y{len(Jm)+1}_{snr}dB", {"X": X, "Y": Y})
-    # for i in range(20):
-    #     for snr in [5, 0, -2, -5]:
-    #         for In in [[20, 10], [20, 10, 20], [20, 10, 20, 10]]:
-    #             for Jm in [[10], [10, 5], [10, 5, 10]]:
-    #                 X, Y = generate(10, In, Jm, R=5, snr=snr)
-    #                 savemat(
-    #                     f"dataset/data{i}_X{len(In)+1}_Y{len(Jm)+1}_{snr}dB",
-    #                     {"X": X, "Y": Y},
-    #                 )
+    # I1 = 20
+    # In = (10, 10)
+    # Jm = (10, 10)
+    # snr = 0
+    # X, Y = generate(10, In, Jm, R=5, snr=snr)
+    # savemat(f"dataset/data_s{I1}_X{len(In)+1}_Y{len(Jm)+1}_{snr}dB", {"X": X, "Y": Y})
+    for i in range(24):
+        for snr in [5, 0, -2, -5]:
+            for In in [[20, 10], [20, 10, 20, 10]]:
+                for Jm in [[10], [10, 5]]:
+                    for ss in [10, 20]:
+                        X, Y = generate_complex(ss, In, Jm, R=5, snr=snr)
+                        savemat(
+                            f"dataset/data{i}_complex_s{ss}_X{len(In)+1}_Y{len(Jm)+1}_{snr}dB",
+                            {"X": X, "Y": Y},
+                        )
