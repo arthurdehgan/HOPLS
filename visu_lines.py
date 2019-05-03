@@ -40,7 +40,6 @@ def generate_line(X_mode, Y_mode, ss, name, lab="HOPLS"):
                 if j == 0:
                     axs[i, j].set_ylabel(r"$Q^2$")
             if i == 1:
-                print(line)
                 gen = np.arange(np.min(line), np.max(line) + .2, .1)
                 used = (
                     gen
