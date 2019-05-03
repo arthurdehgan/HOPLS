@@ -48,8 +48,8 @@ def generate_line(X_mode, Y_mode, ss, name, lab="HOPLS"):
                 )
                 axs[i, j].set_yticks(used)
                 axs[i, j].set_yticklabels([f"{k:.1f}" for k in used])
-                axs[i, j].set_xticks(np.arange(0, 9, 1))
-                axs[i, j].set_xticklabels(np.arange(2, 11, 1))
+                axs[i, j].set_xticks(np.arange(0, 8, 1))
+                axs[i, j].set_xticklabels(np.arange(2, 10, 1))
                 axs[i, j].set_xlabel(r"$\lambda$")
                 if j == 0:
                     axs[i, j].set_ylabel(r"$Q^2$")
