@@ -95,6 +95,6 @@ if __name__ == "__main__":
     modeX = [3, 5]
     modeY = [2, 3]
     sample_sizes = [10, 20]
-    names = ["", "complex_"]
+    names = [""]
     for X_mode, Y_mode, ss, name in product(modeX, modeY, sample_sizes, names):
         generate_barplot(X_mode, Y_mode, ss, name)
