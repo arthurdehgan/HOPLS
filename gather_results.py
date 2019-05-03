@@ -15,14 +15,19 @@ for X_mode, Y_mode, name, ss in product(modeX, modeY, names, sample_size):
     fPLS_R, fNPLS_R, fHOPLS_R = [], [], []
     fHOPLS_L = []
     fNPLS_hyp, fHOPLS_hyp, fPLS_hyp = [], [], []
+    fNPLS_train, fHOPLS_train, fPLS_train = [], [], []
     for snr in noise:
         PLS_scores, NPLS_scores, HOPLS_scores = [], [], []
         PLS_R, NPLS_R, HOPLS_R = [], [], []
         HOPLS_L = []
         NPLS_hyp, HOPLS_hyp, PLS_hyp = [], [], []
+        NPLS_train, HOPLS_train, PLS_train = [], [], []
         for n in range(n_datasets):
             filename = f"./results/res{n}_s{ss}_X{X_mode}_Y{Y_mode}_{snr}dB.mat"
             dat = loadmat(filename)
+            PLS_train += dat["PLS_train"].flatten().tolist()
+            NPLS_train += dat["NPLS_train"].flatten().tolist()
+            HOPLS_train += dat["HOPLS_train"].flatten().tolist()
             PLS_hyp += [dat["PLS_hyp"]]
             NPLS_hyp += [dat["NPLS_hyp"]]
             hop_hyp = dat["HOPLS_hyp"]
@@ -46,12 +51,16 @@ for X_mode, Y_mode, name, ss in product(modeX, modeY, names, sample_size):
         fNPLS_R.append(NPLS_R)
         fHOPLS_R.append(HOPLS_R)
         fHOPLS_L.append(HOPLS_L)
+        fPLS_train.append(PLS_train)
+        fNPLS_train.append(NPLS_train)
+        fHOPLS_train.append(HOPLS_train)
     savemat(
         f"results/PLS_results_{name}X{X_mode}_{Y_mode}_ss{ss}",
         {
             "R": np.asarray(fPLS_R),
             "Q2": np.asarray(fPLS_scores),
             "hyp": np.asarray(fPLS_hyp),
+            "train": np.asarray(fPLS_train),
         },
     )
     savemat(
@@ -60,6 +69,7 @@ for X_mode, Y_mode, name, ss in product(modeX, modeY, names, sample_size):
             "R": np.asarray(fNPLS_R),
             "Q2": np.asarray(fNPLS_scores),
             "hyp": np.asarray(fNPLS_hyp),
+            "train": np.asarray(fNPLS_train),
         },
     )
     savemat(
@@ -69,5 +79,6 @@ for X_mode, Y_mode, name, ss in product(modeX, modeY, names, sample_size):
             "L": np.asarray(fHOPLS_L),
             "Q2": np.asarray(fHOPLS_scores),
             "hyp": np.asarray(fHOPLS_hyp),
+            "train": np.asarray(fHOPLS_train),
         },
     )
