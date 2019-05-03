@@ -38,16 +38,20 @@ def autolabel(ax, rects):
     return ax
 
 
-def generate_barplot(X_mode, Y_mode, ss, name):
+def generate_barplot(X_mode, Y_mode, ss, name, mode="valid"):
     labels = ["HOPLS", "NPLS", "PLS"]
     groups = ["5dB", "0dB", "-2dB", "-5dB"]
+    if mode == "valid":
+        key = "Q2"
+    elif mode == "train":
+        key = "train"
 
     nb_labels = len(labels)
     dat = []
     stds = []
     for lab in labels:
         filename = LOADPATH + lab + f"_results_{name}X{X_mode}_{Y_mode}_ss{ss}"
-        temp = loadmat(filename)["Q2"].squeeze()
+        temp = loadmat(filename)[key].squeeze()
         stds.append(np.std(temp, axis=1))
         temp = np.mean(temp, axis=1)
         dat.append(temp)
@@ -87,7 +91,7 @@ def generate_barplot(X_mode, Y_mode, ss, name):
         ncol=len(labels),
     )
 
-    save_name = f"{name}s{ss}_X{X_mode}_Y{Y_mode}_barplot.png"
+    save_name = f"{mode}_{name}s{ss}_X{X_mode}_Y{Y_mode}_barplot.png"
     fig.savefig(save_name, dpi=RESOLUTION)
 
 
@@ -97,4 +101,5 @@ if __name__ == "__main__":
     sample_sizes = [10, 20]
     names = [""]
     for X_mode, Y_mode, ss, name in product(modeX, modeY, sample_sizes, names):
-        generate_barplot(X_mode, Y_mode, ss, name)
+        print(X_mode, Y_mode)
+        generate_barplot(X_mode, Y_mode, ss, name, "train")
