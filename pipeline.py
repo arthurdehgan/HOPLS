@@ -79,7 +79,7 @@ def do_testing(i, data_type, ss, X_mode, Y_mode, snr, lambda_max=10, R_max=20):
                 best_r = i + 1
                 old_Q2 = Q2
         PLS_q2s = compute_q2_pls(X_train, Y_train, X_train, Y_train, best_r)
-        PLS_train_q2.append(PLS_q2s[-1])
+        PLS_train_q2.append(PLS_q2s)
         PLS_r.append(best_r)
         PLS_q2.append(old_Q2)
 
