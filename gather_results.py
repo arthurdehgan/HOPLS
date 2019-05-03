@@ -6,7 +6,7 @@ noise = [5, 0, -2, -5]
 modeX = [3, 5]
 modeY = [2, 3]
 sample_size = [10, 20]
-names = ["", "complex_"]
+names = [""]
 n_datasets = 24
 
 for X_mode, Y_mode, name, ss in product(modeX, modeY, names, sample_size):
@@ -36,15 +36,15 @@ for X_mode, Y_mode, name, ss in product(modeX, modeY, names, sample_size):
         fHOPLS_R.append(HOPLS_R)
         fHOPLS_L.append(HOPLS_L)
     savemat(
-        f"PLS_results_{name}X{X_mode}_{Y_mode}_ss{ss}",
+        f"results/PLS_results_{name}X{X_mode}_{Y_mode}_ss{ss}",
         {"R": np.asarray(fPLS_R), "Q2": np.asarray(fPLS_scores)},
     )
     savemat(
-        f"NPLS_results_{name}X{X_mode}_{Y_mode}_ss{ss}",
+        f"results/NPLS_results_{name}X{X_mode}_{Y_mode}_ss{ss}",
         {"R": np.asarray(fNPLS_R), "Q2": np.asarray(fNPLS_scores)},
     )
     savemat(
-        f"HOPLS_results_{name}X{X_mode}_{Y_mode}_ss{ss}",
+        f"results/HOPLS_results_{name}X{X_mode}_{Y_mode}_ss{ss}",
         {
             "R": np.asarray(fHOPLS_R),
             "L": np.asarray(fHOPLS_L),
