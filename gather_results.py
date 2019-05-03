@@ -25,7 +25,10 @@ for X_mode, Y_mode, name, ss in product(modeX, modeY, names, sample_size):
             dat = loadmat(filename)
             PLS_hyp += [dat["PLS_hyp"]]
             NPLS_hyp += [dat["NPLS_hyp"]]
-            HOPLS_hyp += [dat["HOPLS_hyp"]]
+            hop_hyp = dat["HOPLS_hyp"]
+            if hop_hyp.shape[-2] > 8:
+                hop_hyp = hop_hyp[:, :8, :]
+            HOPLS_hyp += [hop_hyp]
             PLS_scores += dat["PLS_Q2"].flatten().tolist()
             NPLS_scores += dat["NPLS_Q2"].flatten().tolist()
             HOPLS_scores += dat["HOPLS_Q2"].flatten().tolist()
