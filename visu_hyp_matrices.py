@@ -1,17 +1,19 @@
+from itertools import product
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from scipy.io import loadmat
 import numpy as np
 
+LOADPATH = "results/"
 methods = ["nearest", "sinc"]
 
 
-def generate_matrix(X_mode, Y_mode, ss, name):
+def generate_matrix(X_mode, Y_mode, ss, name, lab="HOPLS"):
     groups = ["5dB", "0dB", "-2dB", "-5dB"]
     plt.figure(figsize=(40, 10))
     for interp_method in methods:
         filename = LOADPATH + lab + f"_results_{name}X{X_mode}_{Y_mode}_ss{ss}"
-        dat = np.mean(loadmat(filename)["search"], axis=0)  # TODO
+        dat = np.mean(loadmat(filename)["hyp"], axis=(1, 2))
         fig, axs = plt.subplots(
             nrows=1, ncols=4, figsize=(9.3, 2), subplot_kw={"xticks": [], "yticks": []}
         )
@@ -40,10 +42,11 @@ def generate_matrix(X_mode, Y_mode, ss, name):
         filename = f"{name}s{ss}_X{X_mode}_Y{Y_mode}_matrices_{interp_method}.png"
         plt.savefig(filename)
 
-in __name__ == '__main__':
+
+if __name__ == "__main__":
     modeX = [3, 5]
     modeY = [2, 3]
     sample_sizes = [10, 20]
-    name = ''
+    name = ""
     for X_mode, Y_mode, ss in product(modeX, modeY, sample_sizes):
         generate_matrix(X_mode, Y_mode, ss, name)

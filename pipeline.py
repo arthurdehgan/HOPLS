@@ -57,7 +57,7 @@ def do_testing(i, data_type, ss, X_mode, Y_mode, snr, lambda_max=10, R_max=20):
     NPLS_r = []
     NPLS_q2 = []
     PLS_hyper = np.zeros((n_folds, R_max))
-    HOPLS_hyper = np.zeros((n_folds, lambda_max - 1, R_max))
+    HOPLS_hyper = np.zeros((n_folds, lambda_max - 2, R_max))
     NPLS_hyper = np.zeros((n_folds, R_max))
     for train_idx, valid_idx in cv.split(X, Y):
         X_train = torch.Tensor(X[train_idx])
