@@ -56,13 +56,13 @@ def generate_line(X_mode, Y_mode, ss, name, lab="HOPLS"):
 
     plt.tight_layout()
     filename = f"{name}s{ss}_X{X_mode}_Y{Y_mode}_lines.png"
-    plt.savefig(filename)
+    plt.savefig(filename, dpi=300)
 
 
 if __name__ == "__main__":
     modeX = [3, 5]
     modeY = [2, 3]
-    sample_sizes = [10, 20]
+    sample_sizes = [20]
     name = ""
     for X_mode, Y_mode, ss in product(modeX, modeY, sample_sizes):
         generate_line(X_mode, Y_mode, ss, name)
